@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UCC · Generador de Horarios</title>
+  <style>
+    :root { font-family: Inter, system-ui, Arial, sans-serif; color-scheme: light; }
+    body { margin: 0; background: #f5f7fb; color: #1f2937; }
+    header { background: #0f172a; color: #fff; padding: 1rem 1.25rem; }
+    h1 { margin: 0; font-size: 1.3rem; }
+    main { padding: 1rem; display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+    section { background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(15, 23, 42, .08); padding: 1rem; }
+    h2 { font-size: 1rem; margin: 0 0 .8rem; }
+    .grid { display: grid; gap: .6rem; }
+    .row { display: grid; gap: .6rem; grid-template-columns: repeat(2, minmax(0,1fr)); }
+    label { font-size: .82rem; font-weight: 600; display: grid; gap: .25rem; }
+    select, input, button, textarea { border: 1px solid #cbd5e1; border-radius: 8px; padding: .5rem .55rem; font: inherit; }
+    button { background: #1d4ed8; color: #fff; border: none; cursor: pointer; }
+    button.secondary { background: #334155; }
+    button.ghost { background: #fff; color: #1d4ed8; border: 1px solid #1d4ed8; }
+    small, .hint { color: #475569; font-size: .78rem; }
+    table { border-collapse: collapse; width: 100%; font-size: .82rem; }
+    th, td { border-bottom: 1px solid #e2e8f0; padding: .45rem; text-align: left; vertical-align: top; }
+    .pill { font-size: .72rem; background: #e2e8f0; border-radius: 999px; padding: .1rem .5rem; display: inline-block; margin-right: .2rem; }
+    .ok { color: #166534; font-weight: 600; }
+    .warn { color: #b45309; font-weight: 600; }
+    .error { color: #b91c1c; font-weight: 600; }
+    .analysis li { margin-bottom: .45rem; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Universidad de Ciencias Comerciales · Generador de Horarios (modo LocalStorage)</h1>
+</header>
+<main>
+  <section>
+    <h2>1) Parámetros de generación</h2>
+    <div class="grid">
+      <div class="row">
+        <label>Coordinación
+          <select id="coordinationSelect"></select>
+        </label>
+        <label>Turno
+          <select id="shiftSelect"></select>
+        </label>
+      </div>
+      <label>Carrera destino
+        <select id="careerSelect"></select>
+      </label>
+      <label>Asignatura
+        <select id="subjectSelect"></select>
+      </label>
+      <div class="row">
+        <label>Docente
+          <select id="teacherSelect"></select>
+        </label>
+        <label>Aula/Recurso
+          <select id="roomSelect"></select>
+        </label>
+      </div>
+      <div class="row">
+        <label>Día
+          <select id="daySelect"></select>
+        </label>
+        <label>Bloque inicial
+          <select id="blockStartSelect"></select>
+        </label>
+      </div>
+      <label><input type="checkbox" id="sharedToggle" /> Asignatura compartida (una sesión para varias carreras)</label>
+      <label>Carreras compartidas (Ctrl/Cmd + click)
+        <select id="sharedCareers" multiple size="4"></select>
+      </label>
+      <button id="assignBtn">Asignar clase con validaciones</button>
+      <div id="assignFeedback" class="hint">Sin acciones todavía.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>2) Simulación automática por coordinación + turno</h2>
+    <div class="grid">
+      <small>La simulación intenta ubicar sesiones pendientes evitando choques de docente, aula, categoría y bloque.</small>
+      <div class="row">
+        <button id="simulateBtn" class="secondary">Simular generación</button>
+        <button id="resetBtn" class="ghost">Reiniciar datos demo</button>
+      </div>
+      <pre id="simulationOutput" style="white-space: pre-wrap; background:#0b1220; color:#cbd5e1; padding:.8rem; border-radius:8px; min-height: 120px;"></pre>
+    </div>
+  </section>
+
+  <section>
+    <h2>3) Horario consolidado</h2>
+    <table>
+      <thead>
+        <tr><th>Coordinación/Carrera</th><th>Turno</th><th>Día/Bloque</th><th>Asignatura</th><th>Docente</th><th>Aula</th><th>Reglas</th></tr>
+      </thead>
+      <tbody id="scheduleTable"></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>4) Análisis y mejoras propuestas (ingeniería)</h2>
+    <ul class="analysis">
+      <li><strong>Centralización obligatoria:</strong> todos los coordinadores trabajan sobre un mismo calendario global con validaciones en tiempo real.</li>
+      <li><strong>Modelo paramétrico:</strong> turnos, bloques, tipos de aula, categorías y disponibilidad docente deben ser catálogos administrables.</li>
+      <li><strong>Reglas anti-colisión:</strong> impedir solapes por docente, aula, carrera, bloque y categoría (si no es compartida).</li>
+      <li><strong>Clases compartidas:</strong> una asignación puede cubrir múltiples carreras sin duplicar docente ni aula.</li>
+      <li><strong>Pipeline recomendado:</strong> configuración → recursos → asignaturas → carga académica → simulación → aprobación.</li>
+      <li><strong>Preparado para backend Node.js:</strong> el módulo <code>BackendAPI</code> encapsula persistencia (hoy localStorage, mañana endpoints REST sin reescribir la UI).</li>
+    </ul>
+  </section>
+</main>
+
+<script>
+const SHIFT_CONFIG = {
+  diurno: {
+    label: 'Diurno',
+    days: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'],
+    blocks: [
+      { id: 'D1', label: '8:00-8:45' }, { id: 'D2', label: '8:50-9:30' },
+      { id: 'D3', label: '9:30-10:00' }, { id: 'D4', label: '10:00-10:45' },
+      { id: 'D5', label: '10:45-11:30' }, { id: 'D6', label: '11:30-12:00' },
+      { id: 'D7', label: '1:00-1:45' }, { id: 'D8', label: '1:45-2:30' }
+    ]
+  },
+  sabatino: {
+    label: 'Sabatino',
+    days: ['Sábado'],
+    blocks: [
+      { id: 'S1', label: '8:00-9:30' }, { id: 'S2', label: '9:40-11:10' },
+      { id: 'S3', label: '11:10-12:20' }, { id: 'S4', label: '1:00-2:30' },
+      { id: 'S5', label: '2:30-3:40' }
+    ]
+  },
+  dominical: {
+    label: 'Dominical',
+    days: ['Domingo'],
+    blocks: [
+      { id: 'O1', label: '8:00-9:10' }, { id: 'O2', label: '9:20-10:30' },
+      { id: 'O3', label: '10:40-11:50' }, { id: 'O4', label: '11:50-1:00' }
+    ]
+  }
+};
+
+const DEMO_DATA = {
+  coordinations: [
+    { id: 'c1', name: 'Arquitectura', careers: ['Arquitectura', 'Diseño Gráfico', 'Ingeniería de Sistemas'] },
+    { id: 'c2', name: 'Contabilidad', careers: ['Contabilidad Pública', 'Finanzas'] },
+    { id: 'c3', name: 'Agronomía', careers: ['Agronomía', 'Zootecnia'] },
+    { id: 'c4', name: 'Ingeniería', careers: ['Ing. Civil', 'Ing. Industrial'] }
+  ],
+  teachers: [
+    { id: 't1', name: 'MSc. María López', categories: ['matemática', 'investigación'] },
+    { id: 't2', name: 'Ing. José Pérez', categories: ['sistemas', 'programación'] },
+    { id: 't3', name: 'Lic. Ana Ruiz', categories: ['formación general', 'identidad'] },
+    { id: 't4', name: 'Arq. Carlos Mora', categories: ['diseño', 'taller'] }
+  ],
+  rooms: [
+    { id: 'r1', name: 'Aula A-101', type: 'aula', capacity: 45 },
+    { id: 'r2', name: 'Aula A-102', type: 'aula', capacity: 35 },
+    { id: 'r3', name: 'Lab Computación', type: 'laboratorio', capacity: 30 },
+    { id: 'r4', name: 'Taller Diseño', type: 'taller', capacity: 25 },
+    { id: 'r5', name: 'Lab Alimentos', type: 'lab_alimento', capacity: 22 }
+  ],
+  subjects: [
+    { id: 's1', name: 'Identidad Nacional', category: 'identidad', requiredRoomType: 'aula', sharedAllowed: true, blocksRequired: 1 },
+    { id: 's2', name: 'Programación I', category: 'programación', requiredRoomType: 'laboratorio', sharedAllowed: false, blocksRequired: 2 },
+    { id: 's3', name: 'Taller de Diseño', category: 'taller', requiredRoomType: 'taller', sharedAllowed: false, blocksRequired: 2 },
+    { id: 's4', name: 'Matemática General', category: 'matemática', requiredRoomType: 'aula', sharedAllowed: false, blocksRequired: 1 },
+    { id: 's5', name: 'Bromatología', category: 'alimentos', requiredRoomType: 'lab_alimento', sharedAllowed: false, blocksRequired: 1 }
+  ],
+  offerings: [
+    { coordinationId: 'c1', career: 'Ingeniería de Sistemas', shift: 'diurno', subjectId: 's2', weeklySessions: 2 },
+    { coordinationId: 'c1', career: 'Arquitectura', shift: 'diurno', subjectId: 's3', weeklySessions: 2 },
+    { coordinationId: 'c1', career: 'Diseño Gráfico', shift: 'diurno', subjectId: 's1', weeklySessions: 1 },
+    { coordinationId: 'c2', career: 'Contabilidad Pública', shift: 'sabatino', subjectId: 's4', weeklySessions: 1 },
+    { coordinationId: 'c3', career: 'Agronomía', shift: 'dominical', subjectId: 's5', weeklySessions: 1 },
+    { coordinationId: 'c4', career: 'Ing. Industrial', shift: 'diurno', subjectId: 's1', weeklySessions: 1 }
+  ],
+  schedule: []
+};
+
+const Storage = {
+  key: 'ucc_scheduler_v1',
+  load() {
+    const raw = localStorage.getItem(this.key);
+    return raw ? JSON.parse(raw) : null;
+  },
+  save(data) { localStorage.setItem(this.key, JSON.stringify(data)); },
+  reset() { this.save(structuredClone(DEMO_DATA)); }
+};
+
+const BackendAPI = {
+  ensure() { if (!Storage.load()) Storage.reset(); },
+  getState() { this.ensure(); return Storage.load(); },
+  update(mutator) {
+    const data = this.getState();
+    mutator(data);
+    Storage.save(data);
+    return data;
+  },
+  list(entity) { return this.getState()[entity]; },
+  createSchedule(entry) { return this.update(s => s.schedule.push(entry)); }
+};
+
+const byId = (arr, id) => arr.find(x => x.id === id);
+const overlap = (a, b) => a.some(x => b.includes(x));
+
+function buildOptions(select, items, mapFn) {
+  select.innerHTML = '';
+  for (const item of items) {
+    const option = document.createElement('option');
+    const { value, label } = mapFn(item);
+    option.value = value; option.textContent = label;
+    select.appendChild(option);
+  }
+}
+
+function getSelectedValues(select) {
+  return Array.from(select.selectedOptions).map(o => o.value);
+}
+
+function blocksFromStart(shift, startBlockId, count) {
+  const blocks = SHIFT_CONFIG[shift].blocks;
+  const idx = blocks.findIndex(b => b.id === startBlockId);
+  if (idx < 0) return [];
+  return blocks.slice(idx, idx + count).map(b => b.id);
+}
+
+function validateAssignment(state, draft) {
+  const subject = byId(state.subjects, draft.subjectId);
+  const room = byId(state.rooms, draft.roomId);
+  if (!subject || !room) return ['Asignatura o aula inexistente.'];
+  if (room.type !== subject.requiredRoomType) {
+    return [`La asignatura requiere recurso tipo "${subject.requiredRoomType}" y seleccionaste "${room.type}".`];
+  }
+  if (draft.blockIds.length !== subject.blocksRequired) {
+    return [`La asignatura ${subject.name} requiere ${subject.blocksRequired} bloque(s) consecutivos.`];
+  }
+
+  const collisions = [];
+  for (const e of state.schedule) {
+    if (e.shift !== draft.shift || e.day !== draft.day || !overlap(e.blockIds, draft.blockIds)) continue;
+    if (e.teacherId === draft.teacherId) collisions.push('Docente ocupado en el mismo bloque.');
+    if (e.roomId === draft.roomId) collisions.push('Aula/recurso ocupado en el mismo bloque.');
+    if (e.coordinationId === draft.coordinationId && overlap(e.careers, draft.careers)) collisions.push('La carrera ya tiene clase en ese bloque.');
+
+    const prevSub = byId(state.subjects, e.subjectId);
+    const sameCategory = prevSub?.category === subject.category;
+    const bothShared = e.shared && draft.shared && e.subjectId === draft.subjectId;
+    if (sameCategory && !bothShared) collisions.push('Choque de categoría en el mismo bloque (regla anti-colisión).');
+  }
+
+  if (draft.shared && !subject.sharedAllowed) collisions.push('Esta asignatura no está marcada como compartible.');
+  if (!draft.shared && draft.careers.length !== 1) collisions.push('Una clase no compartida solo puede tener una carrera.');
+  if (draft.shared && draft.careers.length < 2) collisions.push('Selecciona al menos 2 carreras para una clase compartida.');
+
+  return [...new Set(collisions)];
+}
+
+function render() {
+  const state = BackendAPI.getState();
+  const coordination = document.getElementById('coordinationSelect').value || state.coordinations[0].id;
+  const shift = document.getElementById('shiftSelect').value || 'diurno';
+
+  buildOptions(coordinationSelect, state.coordinations, c => ({ value: c.id, label: c.name }));
+  coordinationSelect.value = coordination;
+
+  buildOptions(shiftSelect, Object.keys(SHIFT_CONFIG), k => ({ value: k, label: SHIFT_CONFIG[k].label }));
+  shiftSelect.value = shift;
+
+  const currentCoord = byId(state.coordinations, coordination);
+  buildOptions(careerSelect, currentCoord.careers, c => ({ value: c, label: c }));
+  buildOptions(sharedCareers, currentCoord.careers, c => ({ value: c, label: c }));
+
+  buildOptions(subjectSelect, state.subjects, s => ({ value: s.id, label: `${s.name} · ${s.category} · ${s.requiredRoomType}` }));
+  buildOptions(teacherSelect, state.teachers, t => ({ value: t.id, label: t.name }));
+  buildOptions(roomSelect, state.rooms, r => ({ value: r.id, label: `${r.name} (${r.type})` }));
+  buildOptions(daySelect, SHIFT_CONFIG[shift].days, d => ({ value: d, label: d }));
+  buildOptions(blockStartSelect, SHIFT_CONFIG[shift].blocks, b => ({ value: b.id, label: `${b.id} · ${b.label}` }));
+
+  scheduleTable.innerHTML = state.schedule
+    .map(s => {
+      const subject = byId(state.subjects, s.subjectId);
+      const teacher = byId(state.teachers, s.teacherId);
+      const room = byId(state.rooms, s.roomId);
+      const blocks = s.blockIds.join(', ');
+      return `<tr>
+        <td>${byId(state.coordinations, s.coordinationId).name}<br><span class='pill'>${s.careers.join(' / ')}</span></td>
+        <td>${SHIFT_CONFIG[s.shift].label}</td>
+        <td>${s.day}<br><span class='pill'>${blocks}</span></td>
+        <td>${subject?.name || s.subjectId}</td>
+        <td>${teacher?.name || s.teacherId}</td>
+        <td>${room?.name || s.roomId}</td>
+        <td>${s.shared ? '<span class="ok">Compartida</span>' : '<span class="warn">No compartida</span>'}</td>
+      </tr>`;
+    })
+    .join('');
+}
+
+function addAssignment() {
+  const state = BackendAPI.getState();
+  const coordinationId = coordinationSelect.value;
+  const shift = shiftSelect.value;
+  const shared = sharedToggle.checked;
+  const subjectId = subjectSelect.value;
+  const subject = byId(state.subjects, subjectId);
+  const selectedCareers = shared ? getSelectedValues(sharedCareers) : [careerSelect.value];
+  const blockIds = blocksFromStart(shift, blockStartSelect.value, subject.blocksRequired);
+
+  const draft = {
+    id: crypto.randomUUID(),
+    coordinationId,
+    careers: selectedCareers,
+    shift,
+    day: daySelect.value,
+    blockIds,
+    subjectId,
+    teacherId: teacherSelect.value,
+    roomId: roomSelect.value,
+    shared
+  };
+
+  const errors = validateAssignment(state, draft);
+  if (errors.length) {
+    assignFeedback.className = 'error';
+    assignFeedback.textContent = `❌ No se pudo asignar: ${errors.join(' | ')}`;
+    return;
+  }
+
+  BackendAPI.createSchedule(draft);
+  assignFeedback.className = 'ok';
+  assignFeedback.textContent = '✅ Asignación registrada correctamente.';
+  render();
+}
+
+function simulate() {
+  const state = BackendAPI.getState();
+  const coordinationId = coordinationSelect.value;
+  const shift = shiftSelect.value;
+  const offerings = state.offerings.filter(o => o.coordinationId === coordinationId && o.shift === shift);
+  let placed = 0;
+  const warnings = [];
+
+  for (const o of offerings) {
+    const subject = byId(state.subjects, o.subjectId);
+    const teacher = state.teachers.find(t => t.categories.includes(subject.category)) || state.teachers[0];
+    const room = state.rooms.find(r => r.type === subject.requiredRoomType);
+    for (let session = 0; session < o.weeklySessions; session++) {
+      let assigned = false;
+      for (const day of SHIFT_CONFIG[shift].days) {
+        for (const start of SHIFT_CONFIG[shift].blocks) {
+          const draft = {
+            id: crypto.randomUUID(),
+            coordinationId,
+            careers: [o.career],
+            shift,
+            day,
+            blockIds: blocksFromStart(shift, start.id, subject.blocksRequired),
+            subjectId: o.subjectId,
+            teacherId: teacher.id,
+            roomId: room?.id,
+            shared: false
+          };
+          if (draft.blockIds.length !== subject.blocksRequired || !room) continue;
+          const errors = validateAssignment(BackendAPI.getState(), draft);
+          if (!errors.length) {
+            BackendAPI.createSchedule(draft);
+            placed++;
+            assigned = true;
+            break;
+          }
+        }
+        if (assigned) break;
+      }
+      if (!assigned) warnings.push(`No se pudo ubicar ${subject.name} (${o.career}) sesión ${session + 1}.`);
+    }
+  }
+
+  simulationOutput.textContent = `Simulación finalizada.\nSesiones colocadas: ${placed}\nAdvertencias: ${warnings.length}\n${warnings.map(w => `- ${w}`).join('\n')}`;
+  render();
+}
+
+coordinationSelect.addEventListener('change', render);
+shiftSelect.addEventListener('change', render);
+assignBtn.addEventListener('click', addAssignment);
+simulateBtn.addEventListener('click', simulate);
+resetBtn.addEventListener('click', () => { Storage.reset(); render(); simulationOutput.textContent = 'Datos reiniciados.'; });
+
+render();
+</script>
+</body>
+</html>
