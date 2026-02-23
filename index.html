@@ -653,6 +653,7 @@ const BackendAPI = {
       state.coordinationCareers ||= [];
       state.rooms = (state.rooms || []).map(room => ({ ...room, capacity: Number(room.capacity || 30) }));
       state.teachers = (state.teachers || []).map(teacher => ({ ...teacher, category: teacher.category || 'general', areaIds: Array.isArray(teacher.areaIds) ? teacher.areaIds : (teacher.areaId ? [teacher.areaId] : []) }));
+      state.classCatalog = (state.classCatalog || []).map(cls => ({ ...cls, anio: Number(cls.anio || 1) }));
       for (const cls of state.classCatalog || []) {
         if (!cls.coordinationId || !cls.career || cls.career === '*') continue;
         const exists = state.coordinationCareers.some(item => item.coordinationId === cls.coordinationId && item.career === cls.career);
@@ -843,6 +844,8 @@ function validateAssignment(state, draft) {
     if (e.teacherId === draft.teacherId) collisions.push('Docente ocupado en el mismo bloque.');
     if (e.roomId === draft.roomId) collisions.push('Aula ocupada en el mismo bloque.');
     if (overlap(getGroupOverlapKeys(e), getGroupOverlapKeys(draft))) collisions.push('La carrera ya tiene clase en ese bloque.');
+    const existingClass = byId(state.classCatalog, e.classId);
+    if (existingClass && cls.category && existingClass.category === cls.category) collisions.push(`Choque por categoría (${cls.category}) en el mismo bloque.`);
   }
 
   const shiftCfg = getShiftConfig(state, draft.shift);
@@ -970,25 +973,29 @@ function generateScheduleForCareerShift(coordinationId, career, shift) {
   let placed = 0;
   const warnings = [];
   const classes = BackendAPI.getState().classCatalog.filter(c => c.coordinationId === coordinationId && c.shift === shift && (c.career === career || c.career === '*'));
+  const groups = generateGroupsForCareer(state, career);
+  const targetGroups = groups.length ? groups : [{ name: career, students: 0 }];
   for (const cls of classes) {
-    for (let session = 0; session < cls.weeklySessions; session++) {
-      let assigned = false;
-      for (const day of cfg.days) {
-        for (const block of cfg.blocks) {
-          const freshState = BackendAPI.getState();
-          const draft = classToScheduleDraft(freshState, cls, day, block.id, { career, groupName: career });
-          if (draft.blockIds.length !== cls.blocksRequired) continue;
-          const errors = validateAssignment(freshState, draft);
-          if (!errors.length) {
-            BackendAPI.update(s => s.schedule.push(draft));
-            placed++;
-            assigned = true;
-            break;
+    for (const group of targetGroups) {
+      for (let session = 0; session < cls.weeklySessions; session++) {
+        let assigned = false;
+        for (const day of cfg.days) {
+          for (const block of cfg.blocks) {
+            const freshState = BackendAPI.getState();
+            const draft = classToScheduleDraft(freshState, cls, day, block.id, { career, groupName: group.name, groupSize: group.students });
+            if (draft.blockIds.length !== cls.blocksRequired) continue;
+            const errors = validateAssignment(freshState, draft);
+            if (!errors.length) {
+              BackendAPI.update(s => s.schedule.push(draft));
+              placed++;
+              assigned = true;
+              break;
+            }
           }
+          if (assigned) break;
         }
-        if (assigned) break;
+        if (!assigned) warnings.push(`No se pudo ubicar ${cls.name} para el grupo ${group.name}.`);
       }
-      if (!assigned) warnings.push(`No se pudo ubicar ${cls.name}.`);
     }
   }
   return { placed, warnings };
@@ -1037,6 +1044,7 @@ async function importCSV() {
         weeklySessions: 1,
         blocksRequired: Math.max(1, Math.ceil(credits / creditsPerBlock)),
         shift,
+        anio: Number(r.anio || 1),
         category: r.categoria || 'general',
         requiredRoomType: (r.tipo || 'aula').toLowerCase(),
         preferredTeacherId: '',
