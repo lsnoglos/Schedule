@@ -189,6 +189,47 @@
 
     .modal-body { padding: 1rem; }
 
+    
+
+    .bottom-nav {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #0f172a;
+      border-top: 1px solid #1e293b;
+      display: flex;
+      z-index: 40;
+    }
+
+    .bottom-nav button {
+      flex: 1;
+      border-radius: 0;
+      border: none;
+      background: transparent;
+      color: #cbd5e1;
+      padding: .7rem .4rem;
+      font-weight: 600;
+    }
+
+    .bottom-nav button.active { background: #1e293b; color: #fff; }
+
+    .view { display: none; padding-bottom: 3.5rem; }
+    .view.active { display: block; }
+
+    .settings-card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      box-shadow: var(--card-shadow);
+      padding: 1rem;
+      margin-bottom: .8rem;
+      display: grid;
+      gap: .8rem;
+    }
+
+    .inline-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+
     @media (max-width: 1024px) {
       .layout { grid-template-columns: 1fr; }
       .sidebar {
@@ -226,11 +267,13 @@
       <button class="menu-item" data-target="panel-docentes">2) Docentes y áreas</button>
       <button class="menu-item" data-target="panel-manual">3) Asignación manual</button>
       <button class="menu-item" data-target="panel-auto">4) Generación automática</button>
-      <button class="menu-item" data-target="panel-horario">5) Horario consolidado</button>
+      <button class="menu-item" data-target="panel-filtro">5) Vista por carrera/turno</button>
+      <button class="menu-item" data-target="panel-horario">6) Horario consolidado</button>
     </nav>
   </aside>
 
   <main>
+    <section class="view active" id="mainView">
     <details class="panel" id="panel-csv" open>
       <summary>1) Cargar clases por CSV y listado de clases <span class="summary-arrow">▼</span></summary>
       <div class="panel-body grid">
@@ -295,6 +338,27 @@
       </div>
     </details>
 
+
+    <details class="panel" id="panel-filtro" open>
+      <summary>5) Vista por coordinación / carrera / turno <span class="summary-arrow">▼</span></summary>
+      <div class="panel-body grid">
+        <div class="row3">
+          <label>Coordinación
+            <select id="careerCoordinationSelect"></select>
+          </label>
+          <label>Carrera
+            <select id="careerSelect"></select>
+          </label>
+          <label>Turno
+            <select id="careerShiftSelect"></select>
+          </label>
+        </div>
+        <div class="table-wrap">
+          <table id="careerScheduleTable"></table>
+        </div>
+      </div>
+    </details>
+
     <details class="panel" id="panel-horario" open>
       <summary>5) Horario consolidado <span class="summary-arrow">▼</span></summary>
       <div class="panel-body table-wrap">
@@ -306,7 +370,42 @@
         </table>
       </div>
     </details>
+    </section>
+
+    <section class="view" id="settingsView">
+      <div class="settings-card">
+        <h3 style="margin:0;">⚙️ Configuración por turno</h3>
+        <small>Define duración de bloque, créditos, días habilitados y máximo de turnos por día.</small>
+        <label>Turno
+          <select id="settingsShiftSelect"></select>
+        </label>
+        <div class="row3">
+          <label>Duración por bloque (min)
+            <input id="settingBlockMinutes" type="number" min="10" step="5" />
+          </label>
+          <label>Créditos por bloque
+            <input id="settingCreditsPerBlock" type="number" min="0" step="0.5" />
+          </label>
+          <label>Máx. turnos por día (carrera)
+            <input id="settingMaxTurns" type="number" min="1" step="1" />
+          </label>
+        </div>
+        <label>Días habilitados (separados por coma)
+          <input id="settingDays" placeholder="Lunes,Martes,Miércoles,Jueves,Viernes" />
+        </label>
+        <div class="inline-actions">
+          <button id="saveShiftSettingsBtn">Guardar turno</button>
+          <button id="resetShiftSettingsBtn" class="secondary">Restablecer por defecto</button>
+        </div>
+        <div id="settingsFeedback" class="hint">Sin cambios.</div>
+      </div>
+    </section>
   </main>
+</div>
+
+<div class="bottom-nav">
+  <button id="navMainBtn" class="active">📋 Principal</button>
+  <button id="navSettingsBtn">⚙️ Configuración</button>
 </div>
 
 <dialog id="areaDialog" class="modal">
@@ -372,10 +471,31 @@
 </dialog>
 
 <script>
-const SHIFT_CONFIG = {
-  diurno: { label: 'Diurno', days: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'], blocks: [{ id:'D1',label:'8:00-8:45'},{id:'D2',label:'8:50-9:30'},{id:'D3',label:'9:30-10:00'},{id:'D4',label:'10:00-10:45'},{id:'D5',label:'10:45-11:30'},{id:'D6',label:'11:30-12:00'},{id:'D7',label:'1:00-1:45'},{id:'D8',label:'1:45-2:30'}] },
-  sabatino: { label: 'Sabatino', days: ['Sábado'], blocks: [{id:'S1',label:'8:00-9:30'},{id:'S2',label:'9:40-11:10'},{id:'S3',label:'11:10-12:20'},{id:'S4',label:'1:00-2:30'},{id:'S5',label:'2:30-3:40'}] },
-  dominical: { label: 'Dominical', days: ['Domingo'], blocks: [{id:'O1',label:'8:00-9:10'},{id:'O2',label:'9:20-10:30'},{id:'O3',label:'10:40-11:50'},{id:'O4',label:'11:50-1:00'}] }
+const DEFAULT_SHIFT_SETTINGS = {
+  diurno: {
+    label: 'Diurno',
+    blockMinutes: 45,
+    creditsPerBlock: 1,
+    maxTurnsPerDay: 4,
+    days: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'],
+    blocks: [{ id:'D1',label:'8:00-8:45'},{id:'D2',label:'8:50-9:30'},{id:'D3',label:'9:30-10:00'},{id:'D4',label:'10:00-10:45'},{id:'D5',label:'10:45-11:30'},{id:'D6',label:'11:30-12:00'},{id:'D7',label:'1:00-1:45'},{id:'D8',label:'1:45-2:30'}]
+  },
+  sabatino: {
+    label: 'Sabatino',
+    blockMinutes: 90,
+    creditsPerBlock: 1.5,
+    maxTurnsPerDay: 5,
+    days: ['Sábado'],
+    blocks: [{id:'S1',label:'8:00-9:30'},{id:'S2',label:'9:40-11:10'},{id:'S3',label:'11:10-12:20'},{id:'S4',label:'1:00-2:30'},{id:'S5',label:'2:30-3:40'}]
+  },
+  dominical: {
+    label: 'Dominical',
+    blockMinutes: 70,
+    creditsPerBlock: 1.25,
+    maxTurnsPerDay: 4,
+    days: ['Domingo'],
+    blocks: [{id:'O1',label:'8:00-9:10'},{id:'O2',label:'9:20-10:30'},{id:'O3',label:'10:40-11:50'},{id:'O4',label:'11:50-1:00'}]
+  }
 };
 
 const DEMO_DATA = {
@@ -383,6 +503,7 @@ const DEMO_DATA = {
   areas: [{id:'a1',name:'Ciencias Básicas'},{id:'a2',name:'Tecnología'}],
   teachers: [{id:'t1',name:'MSc. María López',areaId:'a1'},{id:'t2',name:'Ing. José Pérez',areaId:'a2'}],
   rooms: [{id:'r1',name:'Aula A-101',type:'aula'},{id:'r2',name:'Lab Computación',type:'laboratorio'},{id:'r3',name:'Taller Diseño',type:'taller'}],
+  settings: { shifts: structuredClone(DEFAULT_SHIFT_SETTINGS) },
   classCatalog: [
     {id:'cl1',coordinationId:'c1',career:'Arquitectura',name:'Taller de Diseño',shared:false,sharedCareers:[],weeklySessions:2,blocksRequired:2,shift:'diurno',category:'taller',requiredRoomType:'taller',preferredTeacherId:'t2',areaId:'a2'},
     {id:'cl2',coordinationId:'c1',career:'Diseño Gráfico',name:'Identidad Nacional',shared:true,sharedCareers:['Arquitectura'],weeklySessions:1,blocksRequired:1,shift:'diurno',category:'identidad',requiredRoomType:'aula',preferredTeacherId:'t1',areaId:'a1'}
@@ -391,21 +512,31 @@ const DEMO_DATA = {
 };
 
 const Storage = {
-  key: 'ucc_scheduler_v2',
+  key: 'ucc_scheduler_v3',
   load() { const raw = localStorage.getItem(this.key); return raw ? JSON.parse(raw) : null; },
   save(data) { localStorage.setItem(this.key, JSON.stringify(data)); },
   reset() { this.save(structuredClone(DEMO_DATA)); }
 };
 
 const BackendAPI = {
-  ensure() { if (!Storage.load()) Storage.reset(); },
+  ensure() {
+    if (!Storage.load()) Storage.reset();
+    this.update(state => {
+      state.settings ||= { shifts: structuredClone(DEFAULT_SHIFT_SETTINGS) };
+      state.settings.shifts ||= structuredClone(DEFAULT_SHIFT_SETTINGS);
+      for (const key of Object.keys(DEFAULT_SHIFT_SETTINGS)) {
+        state.settings.shifts[key] = { ...DEFAULT_SHIFT_SETTINGS[key], ...(state.settings.shifts[key] || {}) };
+      }
+    });
+  },
   getState() { this.ensure(); return Storage.load(); },
-  update(mutator) { const data = this.getState(); mutator(data); Storage.save(data); return data; }
+  update(mutator) { const data = Storage.load() || structuredClone(DEMO_DATA); mutator(data); Storage.save(data); return data; }
 };
 
 const byId = (arr, id) => arr.find(x => x.id === id);
 const overlap = (a, b) => a.some(x => b.includes(x));
 const uid = () => crypto.randomUUID();
+const getShiftConfig = (state, shift) => state.settings.shifts[shift];
 
 function buildOptions(select, items, mapFn) {
   select.innerHTML = '';
@@ -419,9 +550,7 @@ function buildOptions(select, items, mapFn) {
 }
 
 function parseCSVLine(line) {
-  const out = [];
-  let current = '';
-  let inQuotes = false;
+  const out = []; let current = ''; let inQuotes = false;
   for (const ch of line) {
     if (ch === '"') inQuotes = !inQuotes;
     else if (ch === ',' && !inQuotes) { out.push(current.trim()); current = ''; }
@@ -441,8 +570,8 @@ function parseCSV(text) {
   });
 }
 
-function blocksFromStart(shift, startBlockId, count) {
-  const blocks = SHIFT_CONFIG[shift].blocks;
+function blocksFromStart(state, shift, startBlockId, count) {
+  const blocks = getShiftConfig(state, shift).blocks;
   const idx = blocks.findIndex(b => b.id === startBlockId);
   if (idx < 0) return [];
   return blocks.slice(idx, idx + count).map(b => b.id);
@@ -451,6 +580,8 @@ function blocksFromStart(shift, startBlockId, count) {
 function classToScheduleDraft(state, cls, day, startBlockId) {
   const teacher = cls.preferredTeacherId ? byId(state.teachers, cls.preferredTeacherId) : state.teachers.find(t => !cls.areaId || t.areaId === cls.areaId);
   const room = state.rooms.find(r => r.type === cls.requiredRoomType);
+  const blocks = blocksFromStart(state, cls.shift, startBlockId, cls.blocksRequired);
+  const credits = blocks.length * (getShiftConfig(state, cls.shift).creditsPerBlock || 0);
   return {
     id: uid(),
     coordinationId: cls.coordinationId,
@@ -458,10 +589,11 @@ function classToScheduleDraft(state, cls, day, startBlockId) {
     careers: cls.shared ? [cls.career, ...cls.sharedCareers] : [cls.career],
     shift: cls.shift,
     day,
-    blockIds: blocksFromStart(cls.shift, startBlockId, cls.blocksRequired),
+    blockIds: blocks,
     teacherId: teacher?.id,
     roomId: room?.id,
-    shared: cls.shared
+    shared: cls.shared,
+    credits
   };
 }
 
@@ -471,6 +603,7 @@ function validateAssignment(state, draft) {
   if (!cls || !room || !draft.teacherId) return ['Falta clase, docente o aula válida.'];
   if (room.type !== cls.requiredRoomType) return [`La clase requiere recurso tipo ${cls.requiredRoomType}.`];
   if (draft.blockIds.length !== cls.blocksRequired) return [`${cls.name} requiere ${cls.blocksRequired} bloque(s) consecutivos.`];
+  if (!getShiftConfig(state, draft.shift).days.includes(draft.day)) return [`El día ${draft.day} no está habilitado para el turno ${draft.shift}.`];
 
   const collisions = [];
   for (const e of state.schedule) {
@@ -479,7 +612,38 @@ function validateAssignment(state, draft) {
     if (e.roomId === draft.roomId) collisions.push('Aula ocupada en el mismo bloque.');
     if (overlap(e.careers, draft.careers)) collisions.push('La carrera ya tiene clase en ese bloque.');
   }
+
+  const shiftCfg = getShiftConfig(state, draft.shift);
+  const turnsForCareer = state.schedule.filter(e => e.shift === draft.shift && e.day === draft.day && overlap(e.careers, draft.careers)).length;
+  if (turnsForCareer >= shiftCfg.maxTurnsPerDay) collisions.push(`Se alcanzó el máximo de ${shiftCfg.maxTurnsPerDay} turnos por día para la carrera.`);
   return [...new Set(collisions)];
+}
+
+function buildCareerScheduleTable(state) {
+  const coordinationId = careerCoordinationSelect.value || state.coordinations[0]?.id;
+  const careers = [...new Set(state.classCatalog.filter(c => c.coordinationId === coordinationId).map(c => c.career))];
+  buildOptions(careerCoordinationSelect, state.coordinations, c => ({ value: c.id, label: c.name }));
+  careerCoordinationSelect.value = coordinationId;
+  buildOptions(careerSelect, careers, c => ({ value: c, label: c }));
+  const selectedCareer = careerSelect.value || careers[0] || '';
+  careerSelect.value = selectedCareer;
+  buildOptions(careerShiftSelect, Object.keys(state.settings.shifts), key => ({ value: key, label: state.settings.shifts[key].label }));
+  const selectedShift = careerShiftSelect.value || 'diurno';
+  careerShiftSelect.value = selectedShift;
+
+  const cfg = getShiftConfig(state, selectedShift);
+  const entries = state.schedule.filter(s => s.coordinationId === coordinationId && s.shift === selectedShift && s.careers.includes(selectedCareer));
+  const head = `<tr><th>Bloque</th>${cfg.days.map(d => `<th>${d}</th>`).join('')}</tr>`;
+  const body = cfg.blocks.map(block => {
+    const cells = cfg.days.map(day => {
+      const match = entries.find(e => e.day === day && e.blockIds.includes(block.id));
+      if (!match) return '<td>-</td>';
+      const cls = byId(state.classCatalog, match.classId);
+      return `<td><strong>${cls?.name || ''}</strong><br><small>${match.blockIds.join(', ')} · ${match.credits || 0} créditos</small></td>`;
+    }).join('');
+    return `<tr><td>${block.id}<br><small>${block.label}</small></td>${cells}</tr>`;
+  }).join('');
+  careerScheduleTable.innerHTML = `<thead>${head}</thead><tbody>${body}</tbody>`;
 }
 
 function render() {
@@ -488,7 +652,7 @@ function render() {
   const shift = shiftSelect.value || 'diurno';
 
   buildOptions(coordinationSelect, state.coordinations, c => ({ value: c.id, label: c.name }));
-  buildOptions(shiftSelect, Object.keys(SHIFT_CONFIG), k => ({ value: k, label: SHIFT_CONFIG[k].label }));
+  buildOptions(shiftSelect, Object.keys(state.settings.shifts), k => ({ value: k, label: state.settings.shifts[k].label }));
   coordinationSelect.value = coordination;
   shiftSelect.value = shift;
 
@@ -497,8 +661,17 @@ function render() {
   buildOptions(classAssignSelect, state.classCatalog, c => ({ value: c.id, label: `${c.name} (${c.career})` }));
   buildOptions(teacherAssignSelect, state.teachers, t => ({ value: t.id, label: t.name }));
   buildOptions(teacherAreaSelect, state.areas, a => ({ value: a.id, label: a.name }));
-  buildOptions(daySelect, SHIFT_CONFIG[shift].days, d => ({ value: d, label: d }));
-  buildOptions(blockStartSelect, SHIFT_CONFIG[shift].blocks, b => ({ value: b.id, label: `${b.id} · ${b.label}` }));
+  buildOptions(daySelect, getShiftConfig(state, shift).days, d => ({ value: d, label: d }));
+  buildOptions(blockStartSelect, getShiftConfig(state, shift).blocks, b => ({ value: b.id, label: `${b.id} · ${b.label}` }));
+  buildOptions(settingsShiftSelect, Object.keys(state.settings.shifts), k => ({ value: k, label: state.settings.shifts[k].label }));
+
+  const settingsShift = settingsShiftSelect.value || 'diurno';
+  settingsShiftSelect.value = settingsShift;
+  const shiftCfg = getShiftConfig(state, settingsShift);
+  settingBlockMinutes.value = shiftCfg.blockMinutes;
+  settingCreditsPerBlock.value = shiftCfg.creditsPerBlock;
+  settingMaxTurns.value = shiftCfg.maxTurnsPerDay;
+  settingDays.value = shiftCfg.days.join(',');
 
   classTable.innerHTML = state.classCatalog.map(c => {
     const coord = byId(state.coordinations, c.coordinationId)?.name || c.coordinationId;
@@ -506,16 +679,16 @@ function render() {
     const area = byId(state.areas, c.areaId)?.name || 'Sin área';
     return `<tr><td>${coord}</td><td>${c.career}</td><td>${c.name}</td><td><span class='pill'>${c.shift}</span><span class='pill'>${c.requiredRoomType}</span><span class='pill'>${c.shared ? 'Compartida' : 'No compartida'}</span><span class='pill'>Sesiones:${c.weeklySessions}</span></td><td>${teacher}</td><td>${area}</td></tr>`;
   }).join('');
-
   teacherTable.innerHTML = state.teachers.map(t => `<tr><td>${t.name}</td><td>${byId(state.areas, t.areaId)?.name || '-'}</td></tr>`).join('');
-
   scheduleTable.innerHTML = state.schedule.map(s => {
     const cls = byId(state.classCatalog, s.classId);
     const teacher = byId(state.teachers, s.teacherId)?.name || s.teacherId;
     const room = byId(state.rooms, s.roomId)?.name || s.roomId;
     const coord = byId(state.coordinations, s.coordinationId)?.name || s.coordinationId;
-    return `<tr><td>${coord}<br><span class='pill'>${s.careers.join(' / ')}</span></td><td>${s.shift}</td><td>${s.day}<br><span class='pill'>${s.blockIds.join(', ')}</span></td><td>${cls?.name || s.classId}</td><td>${teacher}</td><td>${room}</td><td>${s.shared ? '<span class="ok">Compartida</span>' : '<span class="warn">Normal</span>'}</td></tr>`;
+    return `<tr><td>${coord}<br><span class='pill'>${s.careers.join(' / ')}</span></td><td>${s.shift}</td><td>${s.day}<br><span class='pill'>${s.blockIds.join(', ')}</span></td><td>${cls?.name || s.classId}</td><td>${teacher}</td><td>${room}</td><td><span class='pill'>${s.credits || 0} créditos</span> ${s.shared ? '<span class="ok">Compartida</span>' : '<span class="warn">Normal</span>'}</td></tr>`;
   }).join('');
+
+  buildCareerScheduleTable(state);
 }
 
 async function importCSV() {
@@ -530,79 +703,39 @@ async function importCSV() {
     csvFeedback.textContent = `CSV inválido. Faltan columnas: ${missing.join(', ')}`;
     return;
   }
-
   BackendAPI.update(state => {
     for (const r of rows) {
       let coordination = state.coordinations.find(c => c.name.toLowerCase() === r.coordinacion.toLowerCase());
-      if (!coordination) {
-        coordination = { id: uid(), name: r.coordinacion };
-        state.coordinations.push(coordination);
-      }
-
+      if (!coordination) { coordination = { id: uid(), name: r.coordinacion }; state.coordinations.push(coordination); }
       let areaId = '';
       if (r.area) {
         let area = state.areas.find(a => a.name.toLowerCase() === r.area.toLowerCase());
         if (!area) { area = { id: uid(), name: r.area }; state.areas.push(area); }
         areaId = area.id;
       }
-
       let teacherId = '';
       if (r.docente) {
         let teacher = state.teachers.find(t => t.name.toLowerCase() === r.docente.toLowerCase());
         if (!teacher) { teacher = { id: uid(), name: r.docente, areaId: areaId || state.areas[0]?.id }; state.teachers.push(teacher); }
         teacherId = teacher.id;
       }
-
       state.classCatalog.push({
-        id: uid(),
-        coordinationId: coordination.id,
-        career: r.carrera,
-        name: r.clase,
+        id: uid(), coordinationId: coordination.id, career: r.carrera, name: r.clase,
         shared: ['true','1','si','sí'].includes((r.compartida || '').toLowerCase()),
         sharedCareers: (r.carreras_compartidas || '').split('|').map(x => x.trim()).filter(Boolean),
-        weeklySessions: Number(r.sesiones_semanales || 1),
-        blocksRequired: Number(r.bloques_por_sesion || 1),
-        shift: (r.turno || 'diurno').toLowerCase(),
-        category: r.categoria || 'general',
-        requiredRoomType: r.tipo_aula || 'aula',
-        preferredTeacherId: teacherId,
-        areaId
+        weeklySessions: Number(r.sesiones_semanales || 1), blocksRequired: Number(r.bloques_por_sesion || 1),
+        shift: (r.turno || 'diurno').toLowerCase(), category: r.categoria || 'general', requiredRoomType: r.tipo_aula || 'aula', preferredTeacherId: teacherId, areaId
       });
     }
   });
-
   csvFeedback.className = 'ok';
   csvFeedback.textContent = `✅ CSV importado: ${rows.length} clases cargadas.`;
   render();
 }
 
-function addArea() {
-  if (!newAreaName.value.trim()) return;
-  BackendAPI.update(state => state.areas.push({ id: uid(), name: newAreaName.value.trim() }));
-  newAreaName.value = '';
-  areaDialog.close();
-  catalogFeedback.textContent = 'Área agregada.';
-  render();
-}
-
-function addTeacher() {
-  if (!newTeacherName.value.trim()) return;
-  BackendAPI.update(state => state.teachers.push({ id: uid(), name: newTeacherName.value.trim(), areaId: teacherAreaSelect.value }));
-  newTeacherName.value = '';
-  teacherDialog.close();
-  catalogFeedback.textContent = 'Docente agregado.';
-  render();
-}
-
-function assignTeacherToClass() {
-  BackendAPI.update(state => {
-    const cls = byId(state.classCatalog, classAssignSelect.value);
-    if (cls) cls.preferredTeacherId = teacherAssignSelect.value;
-  });
-  assignTeacherDialog.close();
-  catalogFeedback.textContent = 'Docente asignado a la clase.';
-  render();
-}
+function addArea() { if (!newAreaName.value.trim()) return; BackendAPI.update(state => state.areas.push({ id: uid(), name: newAreaName.value.trim() })); newAreaName.value = ''; areaDialog.close(); catalogFeedback.textContent = 'Área agregada.'; render(); }
+function addTeacher() { if (!newTeacherName.value.trim()) return; BackendAPI.update(state => state.teachers.push({ id: uid(), name: newTeacherName.value.trim(), areaId: teacherAreaSelect.value })); newTeacherName.value = ''; teacherDialog.close(); catalogFeedback.textContent = 'Docente agregado.'; render(); }
+function assignTeacherToClass() { BackendAPI.update(state => { const cls = byId(state.classCatalog, classAssignSelect.value); if (cls) cls.preferredTeacherId = teacherAssignSelect.value; }); assignTeacherDialog.close(); catalogFeedback.textContent = 'Docente asignado a la clase.'; render(); }
 
 function addManualAssignment() {
   const state = BackendAPI.getState();
@@ -610,15 +743,29 @@ function addManualAssignment() {
   if (!cls) return;
   const draft = classToScheduleDraft(state, cls, daySelect.value, blockStartSelect.value);
   const errors = validateAssignment(state, draft);
-  if (errors.length) {
-    assignFeedback.className = 'error';
-    assignFeedback.textContent = `❌ ${errors.join(' | ')}`;
+  if (errors.length) { assignFeedback.className = 'error'; assignFeedback.textContent = `❌ ${errors.join(' | ')}`; return; }
+  BackendAPI.update(s => s.schedule.push(draft));
+  assignFeedback.className = 'ok'; assignFeedback.textContent = '✅ Clase asignada correctamente.';
+  manualAssignDialog.close(); render();
+}
+
+function saveShiftSettings() {
+  const shift = settingsShiftSelect.value;
+  const days = settingDays.value.split(',').map(d => d.trim()).filter(Boolean);
+  if (!days.length) {
+    settingsFeedback.className = 'error';
+    settingsFeedback.textContent = 'Debe indicar al menos un día para el turno.';
     return;
   }
-  BackendAPI.update(s => s.schedule.push(draft));
-  assignFeedback.className = 'ok';
-  assignFeedback.textContent = '✅ Clase asignada correctamente.';
-  manualAssignDialog.close();
+  BackendAPI.update(state => {
+    const current = state.settings.shifts[shift];
+    current.blockMinutes = Number(settingBlockMinutes.value || current.blockMinutes);
+    current.creditsPerBlock = Number(settingCreditsPerBlock.value || current.creditsPerBlock);
+    current.maxTurnsPerDay = Number(settingMaxTurns.value || current.maxTurnsPerDay);
+    current.days = days;
+  });
+  settingsFeedback.className = 'ok';
+  settingsFeedback.textContent = `Configuración de ${shift} actualizada.`;
   render();
 }
 
@@ -626,88 +773,73 @@ function simulate() {
   const state = BackendAPI.getState();
   const coordinationId = coordinationSelect.value;
   const shift = shiftSelect.value;
+  const shiftCfg = getShiftConfig(state, shift);
   const classes = state.classCatalog.filter(c => c.coordinationId === coordinationId && c.shift === shift);
   let placed = 0;
   const warnings = [];
-
   for (const cls of classes) {
     for (let session = 0; session < cls.weeklySessions; session++) {
       let assigned = false;
-      for (const day of SHIFT_CONFIG[shift].days) {
-        for (const block of SHIFT_CONFIG[shift].blocks) {
+      for (const day of shiftCfg.days) {
+        for (const block of shiftCfg.blocks) {
           const freshState = BackendAPI.getState();
           const draft = classToScheduleDraft(freshState, cls, day, block.id);
           if (draft.blockIds.length !== cls.blocksRequired) continue;
           const errors = validateAssignment(freshState, draft);
-          if (!errors.length) {
-            BackendAPI.update(s => s.schedule.push(draft));
-            placed++;
-            assigned = true;
-            break;
-          }
+          if (!errors.length) { BackendAPI.update(s => s.schedule.push(draft)); placed++; assigned = true; break; }
         }
         if (assigned) break;
       }
       if (!assigned) warnings.push(`No se pudo ubicar ${cls.name} (${cls.career}) sesión ${session + 1}.`);
     }
   }
-
-  simulationOutput.textContent = `Generación completada por carreras.\nClases colocadas: ${placed}\nAdvertencias: ${warnings.length}\n${warnings.map(w => `- ${w}`).join('\n')}`;
+  simulationOutput.textContent = `Generación completada por carreras.
+Turno: ${shiftCfg.label}
+Clases colocadas: ${placed}
+Advertencias: ${warnings.length}
+${warnings.map(w => `- ${w}`).join('\n')}`;
   render();
 }
 
-function closeMenu() {
-  sidebarMenu.classList.remove('open');
-  menuOverlay.classList.remove('open');
-}
-
-function openMenu() {
-  sidebarMenu.classList.add('open');
-  menuOverlay.classList.add('open');
-}
-
-menuToggle.addEventListener('click', () => {
-  const isOpen = sidebarMenu.classList.contains('open');
-  if (isOpen) closeMenu();
-  else openMenu();
-});
-
+function closeMenu() { sidebarMenu.classList.remove('open'); menuOverlay.classList.remove('open'); }
+function openMenu() { sidebarMenu.classList.add('open'); menuOverlay.classList.add('open'); }
+menuToggle.addEventListener('click', () => sidebarMenu.classList.contains('open') ? closeMenu() : openMenu());
 menuOverlay.addEventListener('click', closeMenu);
 
 document.querySelectorAll('.menu-item').forEach(button => {
   button.addEventListener('click', () => {
+    mainView.classList.add('active'); settingsView.classList.remove('active'); navMainBtn.classList.add('active'); navSettingsBtn.classList.remove('active');
     const panel = document.getElementById(button.dataset.target);
-    if (panel) {
-      panel.open = true;
-      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    if (panel) { panel.open = true; panel.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
     document.querySelectorAll('.menu-item').forEach(btn => btn.classList.remove('active'));
-    button.classList.add('active');
-    closeMenu();
+    button.classList.add('active'); closeMenu();
   });
 });
 
-document.querySelectorAll('[data-open-dialog]').forEach(button => {
-  button.addEventListener('click', () => {
-    const dialog = document.getElementById(button.dataset.openDialog);
-    if (dialog) dialog.showModal();
-  });
-});
+document.querySelectorAll('[data-open-dialog]').forEach(button => button.addEventListener('click', () => {
+  const dialog = document.getElementById(button.dataset.openDialog); if (dialog) dialog.showModal();
+}));
+
+navMainBtn.addEventListener('click', () => { mainView.classList.add('active'); settingsView.classList.remove('active'); navMainBtn.classList.add('active'); navSettingsBtn.classList.remove('active'); });
+navSettingsBtn.addEventListener('click', () => { settingsView.classList.add('active'); mainView.classList.remove('active'); navSettingsBtn.classList.add('active'); navMainBtn.classList.remove('active'); });
 
 coordinationSelect.addEventListener('change', render);
 shiftSelect.addEventListener('change', render);
+careerCoordinationSelect.addEventListener('change', render);
+careerSelect.addEventListener('change', render);
+careerShiftSelect.addEventListener('change', render);
+settingsShiftSelect.addEventListener('change', render);
 importCsvBtn.addEventListener('click', importCSV);
 addAreaBtn.addEventListener('click', addArea);
 addTeacherBtn.addEventListener('click', addTeacher);
 assignTeacherBtn.addEventListener('click', assignTeacherToClass);
 assignBtn.addEventListener('click', addManualAssignment);
+saveShiftSettingsBtn.addEventListener('click', saveShiftSettings);
+resetShiftSettingsBtn.addEventListener('click', () => { BackendAPI.update(state => { state.settings.shifts[settingsShiftSelect.value] = structuredClone(DEFAULT_SHIFT_SETTINGS[settingsShiftSelect.value]); }); settingsFeedback.className = 'ok'; settingsFeedback.textContent = 'Turno restablecido a valores por defecto.'; render(); });
 simulateBtn.addEventListener('click', simulate);
 resetBtn.addEventListener('click', () => { Storage.reset(); simulationOutput.textContent = 'Datos reiniciados.'; render(); });
 
-if (window.innerWidth > 1024) {
-  sidebarMenu.classList.add('open');
-}
-
+if (window.innerWidth > 1024) sidebarMenu.classList.add('open');
 render();
 </script>
 </body>
