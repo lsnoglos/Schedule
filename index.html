@@ -230,6 +230,36 @@
 
     .inline-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
 
+    .notification-stack {
+      position: fixed;
+      right: 1rem;
+      top: calc(var(--header-height) + .75rem);
+      z-index: 60;
+      display: grid;
+      gap: .5rem;
+      width: min(360px, calc(100vw - 1.5rem));
+      pointer-events: none;
+    }
+
+    .notification {
+      border-radius: 12px;
+      box-shadow: 0 10px 28px rgba(15, 23, 42, .2);
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      padding: .75rem .85rem;
+      animation: slideIn .25s ease;
+    }
+
+    .notification strong { display: block; margin-bottom: .2rem; }
+    .notification.info { border-left: 4px solid #2563eb; }
+    .notification.warn { border-left: 4px solid #d97706; }
+    .notification.error { border-left: 4px solid #b91c1c; }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
     @media (max-width: 1024px) {
       .layout { grid-template-columns: 1fr; }
       .sidebar {
@@ -281,7 +311,7 @@
             <select id="csvCoordinationSelect"></select>
           </label>
           <label>Carrera
-            <input id="csvCareerInput" placeholder="Ej. Ingeniería en Sistemas" />
+            <select id="csvCareerSelect"></select>
           </label>
           <label>Turno
             <select id="csvShiftSelect"></select>
@@ -324,6 +354,17 @@
       <summary>3) Generación automática por carrera <span class="summary-arrow">▼</span></summary>
       <div class="panel-body grid">
         <small>Genera horario para todas las carreras de la coordinación/turno y valida contra el resto (docente, aula y carrera).</small>
+        <div class="row3">
+          <label>Coordinación
+            <select id="autoCoordinationSelect"></select>
+          </label>
+          <label>Carrera
+            <select id="autoCareerSelect"></select>
+          </label>
+          <label>Turno
+            <select id="autoShiftSelect"></select>
+          </label>
+        </div>
         <div class="row">
           <button id="simulateBtn" class="secondary">Generar automáticamente</button>
           <button id="resetBtn" class="ghost">Reiniciar demo</button>
@@ -539,6 +580,8 @@
   </div>
 </dialog>
 
+<div id="notificationStack" class="notification-stack" aria-live="polite" aria-atomic="true"></div>
+
 <script>
 const DEFAULT_SHIFT_SETTINGS = {
   diurno: {
@@ -694,6 +737,22 @@ function selectedValues(select) {
   return Array.from(select.selectedOptions || []).map(opt => opt.value).filter(Boolean);
 }
 
+function showNotification({ type = 'info', title = 'Información', message = '', timeout = 4500 }) {
+  const card = document.createElement('div');
+  card.className = `notification ${type}`;
+  card.innerHTML = `<strong>${title}</strong><small>${message}</small>`;
+  notificationStack.appendChild(card);
+  window.setTimeout(() => {
+    card.remove();
+  }, timeout);
+}
+
+function getCareersByCoordination(state, coordinationId) {
+  const configured = (state.coordinationCareers || []).filter(item => item.coordinationId === coordinationId).map(item => item.career);
+  const fromCatalog = (state.classCatalog || []).filter(item => item.coordinationId === coordinationId).map(item => item.career).filter(c => c && c !== '*');
+  return [...new Set([...configured, ...fromCatalog])];
+}
+
 function teacherCanTeachClass(teacher, cls) {
   if (!teacher) return false;
   const areas = teacher.areaIds || [];
@@ -825,15 +884,27 @@ function render() {
   const state = BackendAPI.getState();
   const coordination = coordinationSelect.value || state.coordinations[0]?.id;
   const shift = shiftSelect.value || 'diurno';
+  const csvCoordination = csvCoordinationSelect.value || coordination;
+  const autoCoordination = autoCoordinationSelect.value || coordination;
 
   buildOptions(coordinationSelect, state.coordinations, c => ({ value: c.id, label: c.name }));
   buildOptions(csvCoordinationSelect, state.coordinations, c => ({ value: c.id, label: c.name }));
+  buildOptions(autoCoordinationSelect, state.coordinations, c => ({ value: c.id, label: c.name }));
   buildOptions(shiftSelect, Object.keys(state.settings.shifts), k => ({ value: k, label: state.settings.shifts[k].label }));
   buildOptions(csvShiftSelect, Object.keys(state.settings.shifts), k => ({ value: k, label: state.settings.shifts[k].label }));
+  buildOptions(autoShiftSelect, Object.keys(state.settings.shifts), k => ({ value: k, label: state.settings.shifts[k].label }));
   coordinationSelect.value = coordination;
-  csvCoordinationSelect.value = csvCoordinationSelect.value || coordination;
+  csvCoordinationSelect.value = csvCoordination;
+  autoCoordinationSelect.value = autoCoordination;
   shiftSelect.value = shift;
   csvShiftSelect.value = csvShiftSelect.value || shift;
+  autoShiftSelect.value = autoShiftSelect.value || shift;
+
+  const csvCareers = getCareersByCoordination(state, csvCoordinationSelect.value);
+  buildOptions(csvCareerSelect, csvCareers, career => ({ value: career, label: career }));
+
+  const autoCareers = getCareersByCoordination(state, autoCoordinationSelect.value);
+  buildOptions(autoCareerSelect, autoCareers, career => ({ value: career, label: career }));
 
   const classes = state.classCatalog.filter(c => c.coordinationId === coordination && c.shift === shift);
   buildOptions(subjectSelect, classes, c => ({ value: c.id, label: `${c.name} · ${c.career}` }));
@@ -925,7 +996,10 @@ function generateScheduleForCareerShift(coordinationId, career, shift) {
 
 async function importCSV() {
   const file = csvInput.files[0];
-  if (!file) return;
+  if (!file) {
+    showNotification({ type: 'warn', title: 'Archivo requerido', message: 'Debe seleccionar un archivo CSV para importar.' });
+    return;
+  }
   const text = await file.text();
   const rows = parseCSV(text);
   const required = ['clase','creditos','compartida','anio','categoria','tipo'];
@@ -933,14 +1007,16 @@ async function importCSV() {
   if (missing.length) {
     csvFeedback.className = 'error';
     csvFeedback.textContent = `CSV inválido. Faltan columnas: ${missing.join(', ')}`;
+    showNotification({ type: 'error', title: 'CSV inválido', message: `Faltan columnas: ${missing.join(', ')}` });
     return;
   }
   const coordinationId = csvCoordinationSelect.value || BackendAPI.getState().coordinations[0]?.id;
-  const career = (csvCareerInput.value || '').trim();
+  const career = (csvCareerSelect.value || '').trim();
   const shift = csvShiftSelect.value || 'diurno';
   if (!career) {
     csvFeedback.className = 'error';
-    csvFeedback.textContent = 'Debe indicar la carrera antes de importar.';
+    csvFeedback.textContent = 'Debe seleccionar la carrera antes de importar.';
+    showNotification({ type: 'warn', title: 'Falta información', message: 'Debe seleccionar una carrera para continuar.' });
     return;
   }
 
@@ -971,6 +1047,11 @@ async function importCSV() {
   const result = generateScheduleForCareerShift(coordinationId, career, shift);
   csvFeedback.className = result.warnings.length ? 'warn' : 'ok';
   csvFeedback.textContent = `CSV importado (${rows.length} clases). Horario generado para ${career} (${shift}): ${result.placed} clase(s) ubicadas. ${result.warnings.length ? `Advertencias: ${result.warnings.join(' | ')}` : ''}`;
+  showNotification({
+    type: result.warnings.length ? 'warn' : 'info',
+    title: 'Carga completada',
+    message: result.warnings.length ? `Se importó el CSV con advertencias (${result.warnings.length}).` : `Se importó el CSV y se generó horario para ${career}.`
+  });
   render();
 }
 
@@ -1082,46 +1163,36 @@ function saveShiftSettings() {
 
 function simulate() {
   const state = BackendAPI.getState();
-  const period = getActivePeriod(state);
-  if (!period) {
-    simulationOutput.textContent = 'No hay periodo académico activo.';
+  const coordinationId = autoCoordinationSelect.value;
+  const career = autoCareerSelect.value;
+  const shift = autoShiftSelect.value;
+  const missing = [];
+  if (!coordinationId) missing.push('coordinación');
+  if (!career) missing.push('carrera');
+  if (!shift) missing.push('turno');
+  if (!state.teachers.length) missing.push('docentes registrados');
+  const hasCsvClasses = state.classCatalog.some(cls => cls.coordinationId === coordinationId && cls.career === career && cls.shift === shift);
+  if (!hasCsvClasses) missing.push('clases cargadas por CSV para la selección actual');
+  if (missing.length) {
+    const details = `Debe seleccionar/completar: ${missing.join(', ')}.`;
+    simulationOutput.textContent = details;
+    showNotification({ type: 'warn', title: 'No se puede generar horario', message: details, timeout: 5500 });
     return;
   }
-  const shift = period.shift;
+  const result = generateScheduleForCareerShift(coordinationId, career, shift);
   const shiftCfg = getShiftConfig(state, shift);
-  const enrollments = (state.periodEnrollments || []).filter(e => e.periodId === period.id && Number(e.students || 0) > 0);
-  let placed = 0;
-  const warnings = [];
-
-  for (const enrollment of enrollments) {
-    const groups = generateGroupsForCareer(state, enrollment.career);
-    const classes = state.classCatalog.filter(c => c.shift === shift && (c.career === enrollment.career || c.career === '*'));
-    for (const group of groups) {
-      for (const cls of classes) {
-        for (let session = 0; session < cls.weeklySessions; session++) {
-          let assigned = false;
-          for (const day of shiftCfg.days) {
-            for (const block of shiftCfg.blocks) {
-              const freshState = BackendAPI.getState();
-              const draft = classToScheduleDraft(freshState, cls, day, block.id, { career: enrollment.career, groupName: group.name, groupSize: group.students });
-              if (draft.blockIds.length !== cls.blocksRequired) continue;
-              const errors = validateAssignment(freshState, draft);
-              if (!errors.length) { BackendAPI.update(s => s.schedule.push(draft)); placed++; assigned = true; break; }
-            }
-            if (assigned) break;
-          }
-          if (!assigned) warnings.push(`No se pudo ubicar ${cls.name} para grupo ${group.name} (${enrollment.career}).`);
-        }
-      }
-    }
-  }
-
-  simulationOutput.textContent = `Planificación institucional completada.
-Periodo: ${period.name}
-Turno: ${shiftCfg.label}
-Clases colocadas: ${placed}
-Advertencias: ${warnings.length}
-${warnings.map(w => `- ${w}`).join('\n')}`;
+  simulationOutput.textContent = `Planificación completada.
+Coordinación: ${byId(state.coordinations, coordinationId)?.name || coordinationId}
+Carrera: ${career}
+Turno: ${shiftCfg?.label || shift}
+Clases colocadas: ${result.placed}
+Advertencias: ${result.warnings.length}
+${result.warnings.map(w => `- ${w}`).join('\n')}`;
+  showNotification({
+    type: result.warnings.length ? 'warn' : 'info',
+    title: result.warnings.length ? 'Horario generado con advertencias' : 'Horario generado',
+    message: result.warnings.length ? `Se ubicaron ${result.placed} clases.` : `Se ubicaron ${result.placed} clases para ${career}.`
+  });
   render();
 }
 
@@ -1151,6 +1222,8 @@ coordinationSelect.addEventListener('change', render);
 shiftSelect.addEventListener('change', render);
 csvCoordinationSelect.addEventListener('change', render);
 csvShiftSelect.addEventListener('change', render);
+autoCoordinationSelect.addEventListener('change', render);
+autoShiftSelect.addEventListener('change', render);
 careerCoordinationSelect.addEventListener('change', render);
 careerSelect.addEventListener('change', render);
 careerShiftSelect.addEventListener('change', render);
