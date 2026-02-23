@@ -264,11 +264,9 @@
     <h2>Navegación rápida</h2>
     <nav class="menu-list">
       <button class="menu-item" data-target="panel-csv">1) Carga CSV y clases</button>
-      <button class="menu-item" data-target="panel-docentes">2) Docentes y áreas</button>
-      <button class="menu-item" data-target="panel-manual">3) Asignación manual</button>
-      <button class="menu-item" data-target="panel-auto">4) Generación automática</button>
-      <button class="menu-item" data-target="panel-filtro">5) Vista por carrera/turno</button>
-      <button class="menu-item" data-target="panel-horario">6) Horario consolidado</button>
+      <button class="menu-item" data-target="panel-manual">2) Asignación / cambios manuales</button>
+      <button class="menu-item" data-target="panel-auto">3) Generación automática</button>
+      <button class="menu-item" data-target="panel-filtro">4) Vista por coordinación/carrera/turno</button>
     </nav>
   </aside>
 
@@ -278,6 +276,17 @@
       <summary>1) Cargar clases por CSV y listado de clases <span class="summary-arrow">▼</span></summary>
       <div class="panel-body grid">
         <small>Columnas esperadas: <b>clase,creditos,compartida,anio,categoria,tipo</b></small>
+        <div class="row3">
+          <label>Coordinación
+            <select id="csvCoordinationSelect"></select>
+          </label>
+          <label>Carrera
+            <input id="csvCareerInput" placeholder="Ej. Ingeniería en Sistemas" />
+          </label>
+          <label>Turno
+            <select id="csvShiftSelect"></select>
+          </label>
+        </div>
         <input id="csvInput" type="file" accept=".csv" />
         <button id="importCsvBtn">Importar CSV</button>
         <div id="csvFeedback" class="hint">Sin importación todavía.</div>
@@ -292,26 +301,8 @@
       </div>
     </details>
 
-    <details class="panel" id="panel-docentes" open>
-      <summary>2) Gestión de docentes y áreas <span class="summary-arrow">▼</span></summary>
-      <div class="panel-body grid">
-        <div class="actions">
-          <button class="action-pill" data-open-dialog="areaDialog">➕ Nueva área</button>
-          <button class="action-pill" data-open-dialog="teacherDialog">👤 Nuevo docente</button>
-          <button class="action-pill" data-open-dialog="assignTeacherDialog">🔗 Asignar docente a clase</button>
-        </div>
-        <div id="catalogFeedback" class="hint">Catálogos listos.</div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Docente</th><th>Área</th></tr></thead>
-            <tbody id="teacherTable"></tbody>
-          </table>
-        </div>
-      </div>
-    </details>
-
     <details class="panel" id="panel-manual" open>
-      <summary>3) Parámetros de generación manual <span class="summary-arrow">▼</span></summary>
+      <summary>2) Asignación y cambios manuales <span class="summary-arrow">▼</span></summary>
       <div class="panel-body grid">
         <div class="row">
           <label>Coordinación
@@ -321,13 +312,16 @@
             <select id="shiftSelect"></select>
           </label>
         </div>
-        <button class="secondary" data-open-dialog="manualAssignDialog">Asignar clase manualmente</button>
+        <div class="actions">
+          <button class="secondary" data-open-dialog="manualAssignDialog">Agregar clase manualmente</button>
+          <button class="ghost" data-open-dialog="changeClassDialog">Cambiar clase existente</button>
+        </div>
         <div id="assignFeedback" class="hint">Sin acciones todavía.</div>
       </div>
     </details>
 
     <details class="panel" id="panel-auto" open>
-      <summary>4) Generación automática por carrera <span class="summary-arrow">▼</span></summary>
+      <summary>3) Generación automática por carrera <span class="summary-arrow">▼</span></summary>
       <div class="panel-body grid">
         <small>Genera horario para todas las carreras de la coordinación/turno y valida contra el resto (docente, aula y carrera).</small>
         <div class="row">
@@ -340,7 +334,7 @@
 
 
     <details class="panel" id="panel-filtro" open>
-      <summary>5) Vista por coordinación / carrera / turno <span class="summary-arrow">▼</span></summary>
+      <summary>4) Vista por coordinación / carrera / turno <span class="summary-arrow">▼</span></summary>
       <div class="panel-body grid">
         <div class="row3">
           <label>Coordinación
@@ -359,17 +353,6 @@
       </div>
     </details>
 
-    <details class="panel" id="panel-horario" open>
-      <summary>5) Horario consolidado <span class="summary-arrow">▼</span></summary>
-      <div class="panel-body table-wrap">
-        <table>
-          <thead>
-            <tr><th>Coordinación/Carrera</th><th>Turno</th><th>Día/Bloque</th><th>Clase</th><th>Docente</th><th>Aula</th><th>Reglas</th></tr>
-          </thead>
-          <tbody id="scheduleTable"></tbody>
-        </table>
-      </div>
-    </details>
     </section>
 
     <section class="view" id="settingsView">
@@ -399,6 +382,26 @@
         </div>
         <div id="settingsFeedback" class="hint">Sin cambios.</div>
       </div>
+
+
+
+      <details class="panel" id="panel-docentes" open>
+        <summary>Gestión de docentes y áreas <span class="summary-arrow">▼</span></summary>
+        <div class="panel-body grid">
+          <div class="actions">
+            <button class="action-pill" data-open-dialog="areaDialog">➕ Nueva área</button>
+            <button class="action-pill" data-open-dialog="teacherDialog">👤 Nuevo docente</button>
+            <button class="action-pill" data-open-dialog="assignTeacherDialog">🔗 Asignar docente a clase</button>
+          </div>
+          <div id="catalogFeedback" class="hint">Catálogos listos.</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Docente</th><th>Áreas</th></tr></thead>
+              <tbody id="teacherTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </details>
 
       <div class="settings-card">
         <h3 style="margin:0;">🎓 Matrícula por periodo y carrera</h3>
@@ -443,8 +446,8 @@
     <label>Nombre docente
       <input id="newTeacherName" placeholder="Nombre docente" />
     </label>
-    <label>Área principal
-      <select id="teacherAreaSelect"></select>
+    <label>Áreas del docente (Ctrl/Cmd + click para varias)
+      <select id="teacherAreaSelect" multiple size="6"></select>
     </label>
     <button id="addTeacherBtn">Agregar docente</button>
   </div>
@@ -465,6 +468,29 @@
   </div>
 </dialog>
 
+<dialog id="changeClassDialog" class="modal">
+  <form method="dialog">
+    <div class="modal-head"><strong>Cambiar clase existente</strong><button class="ghost">Cerrar</button></div>
+  </form>
+  <div class="modal-body grid">
+    <label>Clase programada
+      <select id="scheduleEntrySelect"></select>
+    </label>
+    <div class="row">
+      <label>Día
+        <select id="changeDaySelect"></select>
+      </label>
+      <label>Bloque inicial
+        <select id="changeBlockStartSelect"></select>
+      </label>
+    </div>
+    <label>Docente
+      <select id="changeTeacherSelect"></select>
+    </label>
+    <button id="changeClassBtn" class="secondary">Aplicar cambio</button>
+  </div>
+</dialog>
+
 <dialog id="manualAssignDialog" class="modal">
   <form method="dialog">
     <div class="modal-head"><strong>Asignación manual</strong><button class="ghost">Cerrar</button></div>
@@ -481,6 +507,9 @@
         <select id="blockStartSelect"></select>
       </label>
     </div>
+    <label>Docente
+      <select id="manualTeacherSelect"></select>
+    </label>
     <button id="assignBtn">Asignar clase con validaciones</button>
   </div>
 </dialog>
@@ -519,7 +548,7 @@ const DEMO_DATA = {
   currentPeriodId: 'p1',
   periodEnrollments: [{ periodId:'p1', career:'Ing. Sistemas', students:92 }],
   areas: [{id:'a1',name:'Ciencias Básicas'},{id:'a2',name:'Tecnología'}],
-  teachers: [{id:'t1',name:'MSc. María López',areaId:'a1',category:'identidad'},{id:'t2',name:'Ing. José Pérez',areaId:'a2',category:'taller'}],
+  teachers: [{id:'t1',name:'MSc. María López',areaIds:['a1'],category:'identidad'},{id:'t2',name:'Ing. José Pérez',areaIds:['a2'],category:'taller'}],
   rooms: [{id:'r1',name:'Aula A-101',type:'aula',capacity:35},{id:'r2',name:'Lab Computación',type:'laboratorio',capacity:25},{id:'r3',name:'Taller Diseño',type:'taller',capacity:28}],
   settings: { shifts: structuredClone(DEFAULT_SHIFT_SETTINGS) },
   classCatalog: [
@@ -530,7 +559,7 @@ const DEMO_DATA = {
 };
 
 const Storage = {
-  key: 'ucc_scheduler_v3',
+  key: 'ucc_scheduler_v4',
   load() { const raw = localStorage.getItem(this.key); return raw ? JSON.parse(raw) : null; },
   save(data) { localStorage.setItem(this.key, JSON.stringify(data)); },
   reset() { this.save(structuredClone(DEMO_DATA)); }
@@ -549,7 +578,7 @@ const BackendAPI = {
       state.currentPeriodId ||= state.periods[0]?.id;
       state.periodEnrollments ||= [];
       state.rooms = (state.rooms || []).map(room => ({ ...room, capacity: Number(room.capacity || 30) }));
-      state.teachers = (state.teachers || []).map(teacher => ({ ...teacher, category: teacher.category || 'general' }));
+      state.teachers = (state.teachers || []).map(teacher => ({ ...teacher, category: teacher.category || 'general', areaIds: Array.isArray(teacher.areaIds) ? teacher.areaIds : (teacher.areaId ? [teacher.areaId] : []) }));
     });
   },
   getState() { this.ensure(); return Storage.load(); },
@@ -611,6 +640,29 @@ function buildOptions(select, items, mapFn) {
   }
 }
 
+
+function selectedValues(select) {
+  return Array.from(select.selectedOptions || []).map(opt => opt.value).filter(Boolean);
+}
+
+function teacherCanTeachClass(teacher, cls) {
+  if (!teacher) return false;
+  const areas = teacher.areaIds || [];
+  return !cls.areaId || areas.includes(cls.areaId);
+}
+
+function getTeacherForClass(state, cls) {
+  const preferred = byId(state.teachers, cls.preferredTeacherId);
+  if (teacherCanTeachClass(preferred, cls)) return preferred;
+  return state.teachers.find(t => (t.category || 'general') === (cls.category || 'general') && teacherCanTeachClass(t, cls))
+    || state.teachers.find(t => teacherCanTeachClass(t, cls));
+}
+
+function getTeacherAreaNames(state, teacher) {
+  const ids = teacher.areaIds || [];
+  return ids.map(id => byId(state.areas, id)?.name || id).filter(Boolean);
+}
+
 function parseCSVLine(line) {
   const out = []; let current = ''; let inQuotes = false;
   for (const ch of line) {
@@ -640,7 +692,7 @@ function blocksFromStart(state, shift, startBlockId, count) {
 }
 
 function classToScheduleDraft(state, cls, day, startBlockId, context = {}) {
-  const teacher = state.teachers.find(t => (t.category || 'general') === (cls.category || 'general')) || state.teachers.find(t => !cls.areaId || t.areaId === cls.areaId);
+  const teacher = context.teacherId ? byId(state.teachers, context.teacherId) : getTeacherForClass(state, cls);
   const groupSize = Number(context.groupSize || context.students || 0);
   const blocks = blocksFromStart(state, cls.shift, startBlockId, cls.blocksRequired);
   const room = state.rooms.find(r => {
@@ -726,17 +778,25 @@ function render() {
   const shift = shiftSelect.value || 'diurno';
 
   buildOptions(coordinationSelect, state.coordinations, c => ({ value: c.id, label: c.name }));
+  buildOptions(csvCoordinationSelect, state.coordinations, c => ({ value: c.id, label: c.name }));
   buildOptions(shiftSelect, Object.keys(state.settings.shifts), k => ({ value: k, label: state.settings.shifts[k].label }));
+  buildOptions(csvShiftSelect, Object.keys(state.settings.shifts), k => ({ value: k, label: state.settings.shifts[k].label }));
   coordinationSelect.value = coordination;
+  csvCoordinationSelect.value = csvCoordinationSelect.value || coordination;
   shiftSelect.value = shift;
+  csvShiftSelect.value = csvShiftSelect.value || shift;
 
   const classes = state.classCatalog.filter(c => c.coordinationId === coordination && c.shift === shift);
   buildOptions(subjectSelect, classes, c => ({ value: c.id, label: `${c.name} · ${c.career}` }));
   buildOptions(classAssignSelect, state.classCatalog, c => ({ value: c.id, label: `${c.name} (${c.career})` }));
   buildOptions(teacherAssignSelect, state.teachers, t => ({ value: t.id, label: t.name }));
+  buildOptions(manualTeacherSelect, state.teachers, t => ({ value: t.id, label: t.name }));
+  buildOptions(changeTeacherSelect, state.teachers, t => ({ value: t.id, label: t.name }));
   buildOptions(teacherAreaSelect, state.areas, a => ({ value: a.id, label: a.name }));
   buildOptions(daySelect, getShiftConfig(state, shift).days, d => ({ value: d, label: d }));
   buildOptions(blockStartSelect, getShiftConfig(state, shift).blocks, b => ({ value: b.id, label: `${b.id} · ${b.label}` }));
+  buildOptions(changeDaySelect, getShiftConfig(state, shift).days, d => ({ value: d, label: d }));
+  buildOptions(changeBlockStartSelect, getShiftConfig(state, shift).blocks, b => ({ value: b.id, label: `${b.id} · ${b.label}` }));
   buildOptions(settingsShiftSelect, Object.keys(state.settings.shifts), k => ({ value: k, label: state.settings.shifts[k].label }));
 
   const settingsShift = settingsShiftSelect.value || 'diurno';
@@ -760,20 +820,55 @@ function render() {
 
   classTable.innerHTML = state.classCatalog.map(c => {
     const coord = byId(state.coordinations, c.coordinationId)?.name || c.coordinationId;
-    const teacher = state.teachers.find(t => (t.category || 'general') === (c.category || 'general'))?.name || 'Sin asignar';
+    const preferredTeacher = getTeacherForClass(state, c);
     const area = byId(state.areas, c.areaId)?.name || 'Sin área';
-    return `<tr><td>${coord}</td><td>${c.career}</td><td>${c.name}</td><td><span class='pill'>${c.shift}</span><span class='pill'>${c.requiredRoomType}</span><span class='pill'>${c.shared ? 'Compartida' : 'No compartida'}</span><span class='pill'>Sesiones:${c.weeklySessions}</span></td><td>${teacher}</td><td>${area}</td></tr>`;
+    return `<tr><td>${coord}</td><td>${c.career}</td><td>${c.name}</td><td><span class='pill'>${c.shift}</span><span class='pill'>${c.requiredRoomType}</span><span class='pill'>${c.shared ? 'Compartida' : 'No compartida'}</span><span class='pill'>Sesiones:${c.weeklySessions}</span></td><td>${preferredTeacher?.name || 'Sin asignar'}</td><td>${area}</td></tr>`;
   }).join('');
-  teacherTable.innerHTML = state.teachers.map(t => `<tr><td>${t.name}</td><td>${byId(state.areas, t.areaId)?.name || '-'}</td></tr>`).join('');
-  scheduleTable.innerHTML = state.schedule.map(s => {
-    const cls = byId(state.classCatalog, s.classId);
-    const teacher = byId(state.teachers, s.teacherId)?.name || s.teacherId;
-    const room = byId(state.rooms, s.roomId)?.name || s.roomId;
-    const coord = byId(state.coordinations, s.coordinationId)?.name || s.coordinationId;
-    return `<tr><td>${coord}<br><span class='pill'>${s.careers.join(' / ')}</span></td><td>${s.shift}</td><td>${s.day}<br><span class='pill'>${s.blockIds.join(', ')}</span></td><td>${cls?.name || s.classId}</td><td>${teacher}</td><td>${room}</td><td><span class='pill'>${s.credits || 0} créditos</span> ${s.shared ? '<span class="ok">Compartida</span>' : '<span class="warn">Normal</span>'}</td></tr>`;
-  }).join('');
+  teacherTable.innerHTML = state.teachers.map(t => `<tr><td>${t.name}</td><td>${getTeacherAreaNames(state, t).join(', ') || '-'}</td></tr>`).join('');
+  const scheduleOptions = state.schedule.map(entry => {
+    const cls = byId(state.classCatalog, entry.classId);
+    const text = `${cls?.name || entry.classId} · ${entry.day} · ${entry.blockIds.join(', ')} · ${entry.career}`;
+    return { value: entry.id, label: text };
+  });
+  buildOptions(scheduleEntrySelect, scheduleOptions, option => option);
 
   buildCareerScheduleTable(state);
+}
+
+
+function generateScheduleForCareerShift(coordinationId, career, shift) {
+  if (!career) return { placed: 0, warnings: ['Debe indicar una carrera para generar horario.'] };
+  const state = BackendAPI.getState();
+  const cfg = getShiftConfig(state, shift);
+  if (!cfg) return { placed: 0, warnings: [`Turno inválido: ${shift}`] };
+  BackendAPI.update(s => {
+    s.schedule = s.schedule.filter(entry => !(entry.coordinationId === coordinationId && entry.shift === shift && entry.career === career));
+  });
+  let placed = 0;
+  const warnings = [];
+  const classes = BackendAPI.getState().classCatalog.filter(c => c.coordinationId === coordinationId && c.shift === shift && (c.career === career || c.career === '*'));
+  for (const cls of classes) {
+    for (let session = 0; session < cls.weeklySessions; session++) {
+      let assigned = false;
+      for (const day of cfg.days) {
+        for (const block of cfg.blocks) {
+          const freshState = BackendAPI.getState();
+          const draft = classToScheduleDraft(freshState, cls, day, block.id, { career, groupName: career });
+          if (draft.blockIds.length !== cls.blocksRequired) continue;
+          const errors = validateAssignment(freshState, draft);
+          if (!errors.length) {
+            BackendAPI.update(s => s.schedule.push(draft));
+            placed++;
+            assigned = true;
+            break;
+          }
+        }
+        if (assigned) break;
+      }
+      if (!assigned) warnings.push(`No se pudo ubicar ${cls.name}.`);
+    }
+  }
+  return { placed, warnings };
 }
 
 async function importCSV() {
@@ -788,17 +883,23 @@ async function importCSV() {
     csvFeedback.textContent = `CSV inválido. Faltan columnas: ${missing.join(', ')}`;
     return;
   }
+  const coordinationId = csvCoordinationSelect.value || BackendAPI.getState().coordinations[0]?.id;
+  const career = (csvCareerInput.value || '').trim();
+  const shift = csvShiftSelect.value || 'diurno';
+  if (!career) {
+    csvFeedback.className = 'error';
+    csvFeedback.textContent = 'Debe indicar la carrera antes de importar.';
+    return;
+  }
+
   BackendAPI.update(state => {
-    const activePeriod = getActivePeriod(state);
-    const shift = activePeriod?.shift || 'diurno';
-    const defaultCoordinationId = state.coordinations[0]?.id;
     const creditsPerBlock = getShiftConfig(state, shift).creditsPerBlock || 1;
     for (const r of rows) {
       const credits = Number(r.creditos || 1);
       state.classCatalog.push({
         id: uid(),
-        coordinationId: defaultCoordinationId,
-        career: r.carrera || '*',
+        coordinationId,
+        career,
         name: r.clase,
         shared: ['true','1','si','sí'].includes((r.compartida || '').toLowerCase()),
         sharedCareers: [],
@@ -812,10 +913,12 @@ async function importCSV() {
       });
     }
   });
-  csvFeedback.className = 'ok';
-  csvFeedback.textContent = `✅ CSV académico importado: ${rows.length} clases.`;
+  const result = generateScheduleForCareerShift(coordinationId, career, shift);
+  csvFeedback.className = result.warnings.length ? 'warn' : 'ok';
+  csvFeedback.textContent = `CSV importado (${rows.length} clases). Horario generado para ${career} (${shift}): ${result.placed} clase(s) ubicadas. ${result.warnings.length ? `Advertencias: ${result.warnings.join(' | ')}` : ''}`;
   render();
 }
+
 
 function savePeriodEnrollment() {
   const career = periodCareerSelect.value;
@@ -834,19 +937,44 @@ function savePeriodEnrollment() {
 }
 
 function addArea() { if (!newAreaName.value.trim()) return; BackendAPI.update(state => state.areas.push({ id: uid(), name: newAreaName.value.trim() })); newAreaName.value = ''; areaDialog.close(); catalogFeedback.textContent = 'Área agregada.'; render(); }
-function addTeacher() { if (!newTeacherName.value.trim()) return; BackendAPI.update(state => state.teachers.push({ id: uid(), name: newTeacherName.value.trim(), areaId: teacherAreaSelect.value, category: 'general' })); newTeacherName.value = ''; teacherDialog.close(); catalogFeedback.textContent = 'Docente agregado.'; render(); }
+function addTeacher() { if (!newTeacherName.value.trim()) return; const areas = selectedValues(teacherAreaSelect); BackendAPI.update(state => state.teachers.push({ id: uid(), name: newTeacherName.value.trim(), areaIds: areas, category: 'general' })); newTeacherName.value = ''; teacherDialog.close(); catalogFeedback.textContent = 'Docente agregado.'; render(); }
 function assignTeacherToClass() { BackendAPI.update(state => { const cls = byId(state.classCatalog, classAssignSelect.value); if (cls) cls.preferredTeacherId = teacherAssignSelect.value; }); assignTeacherDialog.close(); catalogFeedback.textContent = 'Docente asignado a la clase.'; render(); }
 
 function addManualAssignment() {
   const state = BackendAPI.getState();
   const cls = byId(state.classCatalog, subjectSelect.value);
   if (!cls) return;
-  const draft = classToScheduleDraft(state, cls, daySelect.value, blockStartSelect.value);
+  const draft = classToScheduleDraft(state, cls, daySelect.value, blockStartSelect.value, { teacherId: manualTeacherSelect.value });
   const errors = validateAssignment(state, draft);
   if (errors.length) { assignFeedback.className = 'error'; assignFeedback.textContent = `❌ ${errors.join(' | ')}`; return; }
   BackendAPI.update(s => s.schedule.push(draft));
   assignFeedback.className = 'ok'; assignFeedback.textContent = '✅ Clase asignada correctamente.';
   manualAssignDialog.close(); render();
+}
+
+
+function changeScheduledClass() {
+  const state = BackendAPI.getState();
+  const entry = byId(state.schedule, scheduleEntrySelect.value);
+  if (!entry) return;
+  const cls = byId(state.classCatalog, entry.classId);
+  if (!cls) return;
+  const updated = classToScheduleDraft(state, cls, changeDaySelect.value, changeBlockStartSelect.value, { career: entry.career, groupName: entry.academicGroups?.[0] || entry.career, teacherId: changeTeacherSelect.value });
+  updated.id = entry.id;
+  const withoutCurrent = state.schedule.filter(s => s.id !== entry.id);
+  const errors = validateAssignment({ ...state, schedule: withoutCurrent }, updated);
+  if (errors.length) {
+    assignFeedback.className = 'error';
+    assignFeedback.textContent = `❌ ${errors.join(' | ')}`;
+    return;
+  }
+  BackendAPI.update(s => {
+    s.schedule = s.schedule.map(item => item.id === entry.id ? updated : item);
+  });
+  assignFeedback.className = 'ok';
+  assignFeedback.textContent = '✅ Clase cambiada correctamente.';
+  changeClassDialog.close();
+  render();
 }
 
 function saveShiftSettings() {
@@ -938,6 +1066,8 @@ navSettingsBtn.addEventListener('click', () => { settingsView.classList.add('act
 
 coordinationSelect.addEventListener('change', render);
 shiftSelect.addEventListener('change', render);
+csvCoordinationSelect.addEventListener('change', render);
+csvShiftSelect.addEventListener('change', render);
 careerCoordinationSelect.addEventListener('change', render);
 careerSelect.addEventListener('change', render);
 careerShiftSelect.addEventListener('change', render);
@@ -948,6 +1078,7 @@ addAreaBtn.addEventListener('click', addArea);
 addTeacherBtn.addEventListener('click', addTeacher);
 assignTeacherBtn.addEventListener('click', assignTeacherToClass);
 assignBtn.addEventListener('click', addManualAssignment);
+changeClassBtn.addEventListener('click', changeScheduledClass);
 saveShiftSettingsBtn.addEventListener('click', saveShiftSettings);
 savePeriodEnrollmentBtn.addEventListener('click', savePeriodEnrollment);
 resetShiftSettingsBtn.addEventListener('click', () => { BackendAPI.update(state => { state.settings.shifts[settingsShiftSelect.value] = structuredClone(DEFAULT_SHIFT_SETTINGS[settingsShiftSelect.value]); }); settingsFeedback.className = 'ok'; settingsFeedback.textContent = 'Turno restablecido a valores por defecto.'; render(); });
