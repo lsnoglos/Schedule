@@ -277,7 +277,7 @@
     <details class="panel" id="panel-csv" open>
       <summary>1) Cargar clases por CSV y listado de clases <span class="summary-arrow">▼</span></summary>
       <div class="panel-body grid">
-        <small>Columnas esperadas: <b>coordinacion,carrera,clase,compartida,carreras_compartidas,sesiones_semanales,bloques_por_sesion,turno,categoria,tipo_aula,docente,area</b></small>
+        <small>Columnas esperadas: <b>clase,creditos,compartida,anio,categoria,tipo</b></small>
         <input id="csvInput" type="file" accept=".csv" />
         <button id="importCsvBtn">Importar CSV</button>
         <div id="csvFeedback" class="hint">Sin importación todavía.</div>
@@ -399,6 +399,21 @@
         </div>
         <div id="settingsFeedback" class="hint">Sin cambios.</div>
       </div>
+
+      <div class="settings-card">
+        <h3 style="margin:0;">🎓 Matrícula por periodo y carrera</h3>
+        <small>Configura estudiantes por carrera para el periodo activo. Esto se usa para crear grupos automáticos.</small>
+        <label>Carrera
+          <select id="periodCareerSelect"></select>
+        </label>
+        <label>Estudiantes en periodo activo
+          <input id="periodStudentsInput" type="number" min="0" step="1" />
+        </label>
+        <div class="inline-actions">
+          <button id="savePeriodEnrollmentBtn">Guardar matrícula</button>
+        </div>
+        <div id="periodEnrollmentFeedback" class="hint">Sin cambios.</div>
+      </div>
     </section>
   </main>
 </div>
@@ -500,9 +515,12 @@ const DEFAULT_SHIFT_SETTINGS = {
 
 const DEMO_DATA = {
   coordinations: [{id:'c1',name:'Arquitectura'},{id:'c2',name:'Contabilidad'}],
+  periods: [{ id:'p1', name:'2026-I-D', shift:'diurno' }],
+  currentPeriodId: 'p1',
+  periodEnrollments: [{ periodId:'p1', career:'Ing. Sistemas', students:92 }],
   areas: [{id:'a1',name:'Ciencias Básicas'},{id:'a2',name:'Tecnología'}],
-  teachers: [{id:'t1',name:'MSc. María López',areaId:'a1'},{id:'t2',name:'Ing. José Pérez',areaId:'a2'}],
-  rooms: [{id:'r1',name:'Aula A-101',type:'aula'},{id:'r2',name:'Lab Computación',type:'laboratorio'},{id:'r3',name:'Taller Diseño',type:'taller'}],
+  teachers: [{id:'t1',name:'MSc. María López',areaId:'a1',category:'identidad'},{id:'t2',name:'Ing. José Pérez',areaId:'a2',category:'taller'}],
+  rooms: [{id:'r1',name:'Aula A-101',type:'aula',capacity:35},{id:'r2',name:'Lab Computación',type:'laboratorio',capacity:25},{id:'r3',name:'Taller Diseño',type:'taller',capacity:28}],
   settings: { shifts: structuredClone(DEFAULT_SHIFT_SETTINGS) },
   classCatalog: [
     {id:'cl1',coordinationId:'c1',career:'Arquitectura',name:'Taller de Diseño',shared:false,sharedCareers:[],weeklySessions:2,blocksRequired:2,shift:'diurno',category:'taller',requiredRoomType:'taller',preferredTeacherId:'t2',areaId:'a2'},
@@ -527,6 +545,11 @@ const BackendAPI = {
       for (const key of Object.keys(DEFAULT_SHIFT_SETTINGS)) {
         state.settings.shifts[key] = { ...DEFAULT_SHIFT_SETTINGS[key], ...(state.settings.shifts[key] || {}) };
       }
+      state.periods ||= [{ id:'p1', name:'2026-I-D', shift:'diurno' }];
+      state.currentPeriodId ||= state.periods[0]?.id;
+      state.periodEnrollments ||= [];
+      state.rooms = (state.rooms || []).map(room => ({ ...room, capacity: Number(room.capacity || 30) }));
+      state.teachers = (state.teachers || []).map(teacher => ({ ...teacher, category: teacher.category || 'general' }));
     });
   },
   getState() { this.ensure(); return Storage.load(); },
@@ -537,6 +560,45 @@ const byId = (arr, id) => arr.find(x => x.id === id);
 const overlap = (a, b) => a.some(x => b.includes(x));
 const uid = () => crypto.randomUUID();
 const getShiftConfig = (state, shift) => state.settings.shifts[shift];
+const CAREER_PREFIX_IGNORES = ['ing', 'ingenieria', 'ingeniería', 'lic', 'licenciatura', 'de', 'en'];
+
+function getActivePeriod(state) {
+  return byId(state.periods || [], state.currentPeriodId) || state.periods?.[0] || null;
+}
+
+function getGroupOverlapKeys(entry) {
+  return entry.academicGroups?.length ? entry.academicGroups : (entry.careers || []);
+}
+
+function makeCareerPrefix(career) {
+  const words = (career || '').toLowerCase().replace(/[^a-záéíóúüñ\s]/g, ' ').split(/\s+/).filter(Boolean);
+  const meaningful = words.filter(w => !CAREER_PREFIX_IGNORES.includes(w));
+  const source = meaningful.length ? meaningful : words;
+  const prefix = source.slice(0, 3).map(w => w[0]).join('').toUpperCase();
+  return prefix || 'GR';
+}
+
+function generateGroupsForCareer(state, career) {
+  const period = getActivePeriod(state);
+  if (!period) return [];
+  const enrollment = (state.periodEnrollments || []).find(e => e.periodId === period.id && e.career === career);
+  const students = Number(enrollment?.students || 0);
+  if (students <= 0) return [];
+  const aulaRooms = state.rooms.filter(r => r.type === 'aula' && Number(r.capacity || 0) > 0);
+  const averageCapacity = aulaRooms.length ? aulaRooms.reduce((sum, room) => sum + Number(room.capacity || 0), 0) / aulaRooms.length : 30;
+  const totalGroups = Math.max(1, Math.ceil(students / Math.max(1, averageCapacity)));
+  const prefix = makeCareerPrefix(career);
+  const baseSize = Math.floor(students / totalGroups);
+  let remainder = students % totalGroups;
+  const groups = [];
+  for (let i = 0; i < totalGroups; i++) {
+    const suffix = String.fromCharCode(65 + i);
+    const groupStudents = baseSize + (remainder > 0 ? 1 : 0);
+    if (remainder > 0) remainder--;
+    groups.push({ id: `${prefix}-1${suffix}`, name: `${prefix}-1${suffix}`, career, students: groupStudents || 1 });
+  }
+  return groups;
+}
 
 function buildOptions(select, items, mapFn) {
   select.innerHTML = '';
@@ -577,23 +639,33 @@ function blocksFromStart(state, shift, startBlockId, count) {
   return blocks.slice(idx, idx + count).map(b => b.id);
 }
 
-function classToScheduleDraft(state, cls, day, startBlockId) {
-  const teacher = cls.preferredTeacherId ? byId(state.teachers, cls.preferredTeacherId) : state.teachers.find(t => !cls.areaId || t.areaId === cls.areaId);
-  const room = state.rooms.find(r => r.type === cls.requiredRoomType);
+function classToScheduleDraft(state, cls, day, startBlockId, context = {}) {
+  const teacher = state.teachers.find(t => (t.category || 'general') === (cls.category || 'general')) || state.teachers.find(t => !cls.areaId || t.areaId === cls.areaId);
+  const groupSize = Number(context.groupSize || context.students || 0);
   const blocks = blocksFromStart(state, cls.shift, startBlockId, cls.blocksRequired);
+  const room = state.rooms.find(r => {
+    if (r.type !== cls.requiredRoomType) return false;
+    if (groupSize > 0 && Number(r.capacity || 0) < groupSize) return false;
+    return !state.schedule.some(e => e.shift === cls.shift && e.day === day && e.roomId === r.id && overlap(e.blockIds, blocks));
+  });
   const credits = blocks.length * (getShiftConfig(state, cls.shift).creditsPerBlock || 0);
+  const displayCareer = context.career || cls.career;
+  const groupName = context.groupName || displayCareer;
   return {
     id: uid(),
     coordinationId: cls.coordinationId,
     classId: cls.id,
-    careers: cls.shared ? [cls.career, ...cls.sharedCareers] : [cls.career],
+    career: displayCareer,
+    careers: [groupName],
+    academicGroups: [groupName],
     shift: cls.shift,
     day,
     blockIds: blocks,
     teacherId: teacher?.id,
     roomId: room?.id,
     shared: cls.shared,
-    credits
+    credits,
+    students: groupSize || undefined
   };
 }
 
@@ -610,18 +682,20 @@ function validateAssignment(state, draft) {
     if (e.shift !== draft.shift || e.day !== draft.day || !overlap(e.blockIds, draft.blockIds)) continue;
     if (e.teacherId === draft.teacherId) collisions.push('Docente ocupado en el mismo bloque.');
     if (e.roomId === draft.roomId) collisions.push('Aula ocupada en el mismo bloque.');
-    if (overlap(e.careers, draft.careers)) collisions.push('La carrera ya tiene clase en ese bloque.');
+    if (overlap(getGroupOverlapKeys(e), getGroupOverlapKeys(draft))) collisions.push('La carrera ya tiene clase en ese bloque.');
   }
 
   const shiftCfg = getShiftConfig(state, draft.shift);
-  const turnsForCareer = state.schedule.filter(e => e.shift === draft.shift && e.day === draft.day && overlap(e.careers, draft.careers)).length;
+  const turnsForCareer = state.schedule.filter(e => e.shift === draft.shift && e.day === draft.day && overlap(getGroupOverlapKeys(e), getGroupOverlapKeys(draft))).length;
   if (turnsForCareer >= shiftCfg.maxTurnsPerDay) collisions.push(`Se alcanzó el máximo de ${shiftCfg.maxTurnsPerDay} turnos por día para la carrera.`);
   return [...new Set(collisions)];
 }
 
 function buildCareerScheduleTable(state) {
   const coordinationId = careerCoordinationSelect.value || state.coordinations[0]?.id;
-  const careers = [...new Set(state.classCatalog.filter(c => c.coordinationId === coordinationId).map(c => c.career))];
+  const catalogCareers = state.classCatalog.filter(c => c.coordinationId === coordinationId).map(c => c.career).filter(c => c && c !== '*');
+  const enrollmentCareers = (state.periodEnrollments || []).map(e => e.career);
+  const careers = [...new Set([...catalogCareers, ...enrollmentCareers])];
   buildOptions(careerCoordinationSelect, state.coordinations, c => ({ value: c.id, label: c.name }));
   careerCoordinationSelect.value = coordinationId;
   buildOptions(careerSelect, careers, c => ({ value: c, label: c }));
@@ -632,7 +706,7 @@ function buildCareerScheduleTable(state) {
   careerShiftSelect.value = selectedShift;
 
   const cfg = getShiftConfig(state, selectedShift);
-  const entries = state.schedule.filter(s => s.coordinationId === coordinationId && s.shift === selectedShift && s.careers.includes(selectedCareer));
+  const entries = state.schedule.filter(s => s.coordinationId === coordinationId && s.shift === selectedShift && (s.career === selectedCareer || (s.careers || []).includes(selectedCareer))); 
   const head = `<tr><th>Bloque</th>${cfg.days.map(d => `<th>${d}</th>`).join('')}</tr>`;
   const body = cfg.blocks.map(block => {
     const cells = cfg.days.map(day => {
@@ -673,9 +747,20 @@ function render() {
   settingMaxTurns.value = shiftCfg.maxTurnsPerDay;
   settingDays.value = shiftCfg.days.join(',');
 
+  const enrolledCareers = [...new Set((state.periodEnrollments || []).map(e => e.career))];
+  const catalogCareers = [...new Set(state.classCatalog.map(c => c.career).filter(c => c && c !== '*'))];
+  const careerOptions = [...new Set([...enrolledCareers, ...catalogCareers])];
+  buildOptions(periodCareerSelect, careerOptions, c => ({ value: c, label: c }));
+  if (careerOptions.length) {
+    periodCareerSelect.value = periodCareerSelect.value || careerOptions[0];
+    const period = getActivePeriod(state);
+    const enrollment = state.periodEnrollments.find(e => e.periodId === period?.id && e.career === periodCareerSelect.value);
+    periodStudentsInput.value = Number(enrollment?.students || 0);
+  }
+
   classTable.innerHTML = state.classCatalog.map(c => {
     const coord = byId(state.coordinations, c.coordinationId)?.name || c.coordinationId;
-    const teacher = byId(state.teachers, c.preferredTeacherId)?.name || 'Sin asignar';
+    const teacher = state.teachers.find(t => (t.category || 'general') === (c.category || 'general'))?.name || 'Sin asignar';
     const area = byId(state.areas, c.areaId)?.name || 'Sin área';
     return `<tr><td>${coord}</td><td>${c.career}</td><td>${c.name}</td><td><span class='pill'>${c.shift}</span><span class='pill'>${c.requiredRoomType}</span><span class='pill'>${c.shared ? 'Compartida' : 'No compartida'}</span><span class='pill'>Sesiones:${c.weeklySessions}</span></td><td>${teacher}</td><td>${area}</td></tr>`;
   }).join('');
@@ -696,7 +781,7 @@ async function importCSV() {
   if (!file) return;
   const text = await file.text();
   const rows = parseCSV(text);
-  const required = ['coordinacion','carrera','clase','compartida','sesiones_semanales','bloques_por_sesion','turno','categoria','tipo_aula'];
+  const required = ['clase','creditos','compartida','anio','categoria','tipo'];
   const missing = required.filter(k => !(k in (rows[0] || {})));
   if (missing.length) {
     csvFeedback.className = 'error';
@@ -704,37 +789,52 @@ async function importCSV() {
     return;
   }
   BackendAPI.update(state => {
+    const activePeriod = getActivePeriod(state);
+    const shift = activePeriod?.shift || 'diurno';
+    const defaultCoordinationId = state.coordinations[0]?.id;
+    const creditsPerBlock = getShiftConfig(state, shift).creditsPerBlock || 1;
     for (const r of rows) {
-      let coordination = state.coordinations.find(c => c.name.toLowerCase() === r.coordinacion.toLowerCase());
-      if (!coordination) { coordination = { id: uid(), name: r.coordinacion }; state.coordinations.push(coordination); }
-      let areaId = '';
-      if (r.area) {
-        let area = state.areas.find(a => a.name.toLowerCase() === r.area.toLowerCase());
-        if (!area) { area = { id: uid(), name: r.area }; state.areas.push(area); }
-        areaId = area.id;
-      }
-      let teacherId = '';
-      if (r.docente) {
-        let teacher = state.teachers.find(t => t.name.toLowerCase() === r.docente.toLowerCase());
-        if (!teacher) { teacher = { id: uid(), name: r.docente, areaId: areaId || state.areas[0]?.id }; state.teachers.push(teacher); }
-        teacherId = teacher.id;
-      }
+      const credits = Number(r.creditos || 1);
       state.classCatalog.push({
-        id: uid(), coordinationId: coordination.id, career: r.carrera, name: r.clase,
+        id: uid(),
+        coordinationId: defaultCoordinationId,
+        career: r.carrera || '*',
+        name: r.clase,
         shared: ['true','1','si','sí'].includes((r.compartida || '').toLowerCase()),
-        sharedCareers: (r.carreras_compartidas || '').split('|').map(x => x.trim()).filter(Boolean),
-        weeklySessions: Number(r.sesiones_semanales || 1), blocksRequired: Number(r.bloques_por_sesion || 1),
-        shift: (r.turno || 'diurno').toLowerCase(), category: r.categoria || 'general', requiredRoomType: r.tipo_aula || 'aula', preferredTeacherId: teacherId, areaId
+        sharedCareers: [],
+        weeklySessions: 1,
+        blocksRequired: Math.max(1, Math.ceil(credits / creditsPerBlock)),
+        shift,
+        category: r.categoria || 'general',
+        requiredRoomType: (r.tipo || 'aula').toLowerCase(),
+        preferredTeacherId: '',
+        areaId: ''
       });
     }
   });
   csvFeedback.className = 'ok';
-  csvFeedback.textContent = `✅ CSV importado: ${rows.length} clases cargadas.`;
+  csvFeedback.textContent = `✅ CSV académico importado: ${rows.length} clases.`;
+  render();
+}
+
+function savePeriodEnrollment() {
+  const career = periodCareerSelect.value;
+  const students = Number(periodStudentsInput.value || 0);
+  if (!career) return;
+  BackendAPI.update(state => {
+    const period = getActivePeriod(state);
+    if (!period) return;
+    const existing = state.periodEnrollments.find(e => e.periodId === period.id && e.career === career);
+    if (existing) existing.students = students;
+    else state.periodEnrollments.push({ periodId: period.id, career, students });
+  });
+  periodEnrollmentFeedback.className = 'ok';
+  periodEnrollmentFeedback.textContent = `Matrícula actualizada para ${career}.`;
   render();
 }
 
 function addArea() { if (!newAreaName.value.trim()) return; BackendAPI.update(state => state.areas.push({ id: uid(), name: newAreaName.value.trim() })); newAreaName.value = ''; areaDialog.close(); catalogFeedback.textContent = 'Área agregada.'; render(); }
-function addTeacher() { if (!newTeacherName.value.trim()) return; BackendAPI.update(state => state.teachers.push({ id: uid(), name: newTeacherName.value.trim(), areaId: teacherAreaSelect.value })); newTeacherName.value = ''; teacherDialog.close(); catalogFeedback.textContent = 'Docente agregado.'; render(); }
+function addTeacher() { if (!newTeacherName.value.trim()) return; BackendAPI.update(state => state.teachers.push({ id: uid(), name: newTeacherName.value.trim(), areaId: teacherAreaSelect.value, category: 'general' })); newTeacherName.value = ''; teacherDialog.close(); catalogFeedback.textContent = 'Docente agregado.'; render(); }
 function assignTeacherToClass() { BackendAPI.update(state => { const cls = byId(state.classCatalog, classAssignSelect.value); if (cls) cls.preferredTeacherId = teacherAssignSelect.value; }); assignTeacherDialog.close(); catalogFeedback.textContent = 'Docente asignado a la clase.'; render(); }
 
 function addManualAssignment() {
@@ -771,29 +871,42 @@ function saveShiftSettings() {
 
 function simulate() {
   const state = BackendAPI.getState();
-  const coordinationId = coordinationSelect.value;
-  const shift = shiftSelect.value;
+  const period = getActivePeriod(state);
+  if (!period) {
+    simulationOutput.textContent = 'No hay periodo académico activo.';
+    return;
+  }
+  const shift = period.shift;
   const shiftCfg = getShiftConfig(state, shift);
-  const classes = state.classCatalog.filter(c => c.coordinationId === coordinationId && c.shift === shift);
+  const enrollments = (state.periodEnrollments || []).filter(e => e.periodId === period.id && Number(e.students || 0) > 0);
   let placed = 0;
   const warnings = [];
-  for (const cls of classes) {
-    for (let session = 0; session < cls.weeklySessions; session++) {
-      let assigned = false;
-      for (const day of shiftCfg.days) {
-        for (const block of shiftCfg.blocks) {
-          const freshState = BackendAPI.getState();
-          const draft = classToScheduleDraft(freshState, cls, day, block.id);
-          if (draft.blockIds.length !== cls.blocksRequired) continue;
-          const errors = validateAssignment(freshState, draft);
-          if (!errors.length) { BackendAPI.update(s => s.schedule.push(draft)); placed++; assigned = true; break; }
+
+  for (const enrollment of enrollments) {
+    const groups = generateGroupsForCareer(state, enrollment.career);
+    const classes = state.classCatalog.filter(c => c.shift === shift && (c.career === enrollment.career || c.career === '*'));
+    for (const group of groups) {
+      for (const cls of classes) {
+        for (let session = 0; session < cls.weeklySessions; session++) {
+          let assigned = false;
+          for (const day of shiftCfg.days) {
+            for (const block of shiftCfg.blocks) {
+              const freshState = BackendAPI.getState();
+              const draft = classToScheduleDraft(freshState, cls, day, block.id, { career: enrollment.career, groupName: group.name, groupSize: group.students });
+              if (draft.blockIds.length !== cls.blocksRequired) continue;
+              const errors = validateAssignment(freshState, draft);
+              if (!errors.length) { BackendAPI.update(s => s.schedule.push(draft)); placed++; assigned = true; break; }
+            }
+            if (assigned) break;
+          }
+          if (!assigned) warnings.push(`No se pudo ubicar ${cls.name} para grupo ${group.name} (${enrollment.career}).`);
         }
-        if (assigned) break;
       }
-      if (!assigned) warnings.push(`No se pudo ubicar ${cls.name} (${cls.career}) sesión ${session + 1}.`);
     }
   }
-  simulationOutput.textContent = `Generación completada por carreras.
+
+  simulationOutput.textContent = `Planificación institucional completada.
+Periodo: ${period.name}
 Turno: ${shiftCfg.label}
 Clases colocadas: ${placed}
 Advertencias: ${warnings.length}
@@ -829,12 +942,14 @@ careerCoordinationSelect.addEventListener('change', render);
 careerSelect.addEventListener('change', render);
 careerShiftSelect.addEventListener('change', render);
 settingsShiftSelect.addEventListener('change', render);
+periodCareerSelect.addEventListener('change', render);
 importCsvBtn.addEventListener('click', importCSV);
 addAreaBtn.addEventListener('click', addArea);
 addTeacherBtn.addEventListener('click', addTeacher);
 assignTeacherBtn.addEventListener('click', assignTeacherToClass);
 assignBtn.addEventListener('click', addManualAssignment);
 saveShiftSettingsBtn.addEventListener('click', saveShiftSettings);
+savePeriodEnrollmentBtn.addEventListener('click', savePeriodEnrollment);
 resetShiftSettingsBtn.addEventListener('click', () => { BackendAPI.update(state => { state.settings.shifts[settingsShiftSelect.value] = structuredClone(DEFAULT_SHIFT_SETTINGS[settingsShiftSelect.value]); }); settingsFeedback.className = 'ok'; settingsFeedback.textContent = 'Turno restablecido a valores por defecto.'; render(); });
 simulateBtn.addEventListener('click', simulate);
 resetBtn.addEventListener('click', () => { Storage.reset(); simulationOutput.textContent = 'Datos reiniciados.'; render(); });
