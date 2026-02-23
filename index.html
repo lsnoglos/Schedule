@@ -353,7 +353,7 @@
     <details class="panel" id="panel-auto" open>
       <summary>3) Generación automática por carrera <span class="summary-arrow">▼</span></summary>
       <div class="panel-body grid">
-        <small>Genera horario para todas las carreras de la coordinación/turno y valida contra el resto (docente, aula y carrera).</small>
+        <small>Genera horario únicamente para la coordinación/carrera/turno seleccionadas en la carga CSV y valida todas las selecciones antes de continuar.</small>
         <div class="row3">
           <label>Coordinación
             <select id="autoCoordinationSelect"></select>
@@ -1040,7 +1040,8 @@ async function importCSV() {
         category: r.categoria || 'general',
         requiredRoomType: (r.tipo || 'aula').toLowerCase(),
         preferredTeacherId: '',
-        areaId: ''
+        areaId: '',
+        importedFromCsv: true
       });
     }
   });
@@ -1166,13 +1167,19 @@ function simulate() {
   const coordinationId = autoCoordinationSelect.value;
   const career = autoCareerSelect.value;
   const shift = autoShiftSelect.value;
+  const csvCoordinationId = csvCoordinationSelect.value;
+  const csvCareer = (csvCareerSelect.value || '').trim();
+  const csvShift = csvShiftSelect.value;
   const missing = [];
   if (!coordinationId) missing.push('coordinación');
   if (!career) missing.push('carrera');
   if (!shift) missing.push('turno');
   if (!state.teachers.length) missing.push('docentes registrados');
-  const hasCsvClasses = state.classCatalog.some(cls => cls.coordinationId === coordinationId && cls.career === career && cls.shift === shift);
+  const hasCsvClasses = state.classCatalog.some(cls => cls.importedFromCsv && cls.coordinationId === coordinationId && cls.career === career && cls.shift === shift);
   if (!hasCsvClasses) missing.push('clases cargadas por CSV para la selección actual');
+  if (coordinationId !== csvCoordinationId || career !== csvCareer || shift !== csvShift) {
+    missing.push('que la selección de generación automática coincida con la selección realizada en el módulo CSV');
+  }
   if (missing.length) {
     const details = `Debe seleccionar/completar: ${missing.join(', ')}.`;
     simulationOutput.textContent = details;
