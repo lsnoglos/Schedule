@@ -404,6 +404,31 @@
       </details>
 
       <div class="settings-card">
+        <h3 style="margin:0;">🏫 Coordinaciones y carreras</h3>
+        <small>Registra coordinaciones y asocia sus carreras para que estén disponibles en filtros y matrícula.</small>
+        <div class="row">
+          <label>Nueva coordinación
+            <input id="newCoordinationInput" placeholder="Ej. Ingeniería" />
+          </label>
+          <label>&nbsp;
+            <button id="addCoordinationBtn" class="secondary">Agregar coordinación</button>
+          </label>
+        </div>
+        <div class="row">
+          <label>Coordinación
+            <select id="settingsCoordinationSelect"></select>
+          </label>
+          <label>Nueva carrera
+            <input id="settingsCareerInput" placeholder="Ej. Ingeniería Industrial" />
+          </label>
+        </div>
+        <div class="inline-actions">
+          <button id="addCoordinationCareerBtn">Agregar carrera a coordinación</button>
+        </div>
+        <div id="coordinationCareerFeedback" class="hint">Sin cambios.</div>
+      </div>
+
+      <div class="settings-card">
         <h3 style="margin:0;">🎓 Matrícula por periodo y carrera</h3>
         <small>Configura estudiantes por carrera para el periodo activo. Esto se usa para crear grupos automáticos.</small>
         <label>Carrera
@@ -544,6 +569,11 @@ const DEFAULT_SHIFT_SETTINGS = {
 
 const DEMO_DATA = {
   coordinations: [{id:'c1',name:'Arquitectura'},{id:'c2',name:'Contabilidad'}],
+  coordinationCareers: [
+    { coordinationId: 'c1', career: 'Arquitectura' },
+    { coordinationId: 'c1', career: 'Diseño Gráfico' },
+    { coordinationId: 'c2', career: 'Contabilidad' }
+  ],
   periods: [{ id:'p1', name:'2026-I-D', shift:'diurno' }],
   currentPeriodId: 'p1',
   periodEnrollments: [{ periodId:'p1', career:'Ing. Sistemas', students:92 }],
@@ -577,8 +607,14 @@ const BackendAPI = {
       state.periods ||= [{ id:'p1', name:'2026-I-D', shift:'diurno' }];
       state.currentPeriodId ||= state.periods[0]?.id;
       state.periodEnrollments ||= [];
+      state.coordinationCareers ||= [];
       state.rooms = (state.rooms || []).map(room => ({ ...room, capacity: Number(room.capacity || 30) }));
       state.teachers = (state.teachers || []).map(teacher => ({ ...teacher, category: teacher.category || 'general', areaIds: Array.isArray(teacher.areaIds) ? teacher.areaIds : (teacher.areaId ? [teacher.areaId] : []) }));
+      for (const cls of state.classCatalog || []) {
+        if (!cls.coordinationId || !cls.career || cls.career === '*') continue;
+        const exists = state.coordinationCareers.some(item => item.coordinationId === cls.coordinationId && item.career === cls.career);
+        if (!exists) state.coordinationCareers.push({ coordinationId: cls.coordinationId, career: cls.career });
+      }
     });
   },
   getState() { this.ensure(); return Storage.load(); },
@@ -630,14 +666,27 @@ function generateGroupsForCareer(state, career) {
 }
 
 function buildOptions(select, items, mapFn) {
+  const previous = select.value;
   select.innerHTML = '';
+  const values = [];
   for (const item of items) {
     const option = document.createElement('option');
     const { value, label } = mapFn(item);
+    values.push(value);
     option.value = value;
     option.textContent = label;
     select.appendChild(option);
   }
+  if (!items.length) {
+    select.value = '';
+    return '';
+  }
+  if (values.includes(previous)) {
+    select.value = previous;
+    return previous;
+  }
+  select.value = values[0];
+  return select.value;
 }
 
 
@@ -746,8 +795,8 @@ function validateAssignment(state, draft) {
 function buildCareerScheduleTable(state) {
   const coordinationId = careerCoordinationSelect.value || state.coordinations[0]?.id;
   const catalogCareers = state.classCatalog.filter(c => c.coordinationId === coordinationId).map(c => c.career).filter(c => c && c !== '*');
-  const enrollmentCareers = (state.periodEnrollments || []).map(e => e.career);
-  const careers = [...new Set([...catalogCareers, ...enrollmentCareers])];
+  const configuredCareers = (state.coordinationCareers || []).filter(item => item.coordinationId === coordinationId).map(item => item.career);
+  const careers = [...new Set([...configuredCareers, ...catalogCareers])];
   buildOptions(careerCoordinationSelect, state.coordinations, c => ({ value: c.id, label: c.name }));
   careerCoordinationSelect.value = coordinationId;
   buildOptions(careerSelect, careers, c => ({ value: c, label: c }));
@@ -808,9 +857,12 @@ function render() {
   settingDays.value = shiftCfg.days.join(',');
 
   const enrolledCareers = [...new Set((state.periodEnrollments || []).map(e => e.career))];
+  const configuredCareers = [...new Set((state.coordinationCareers || []).map(item => item.career))];
   const catalogCareers = [...new Set(state.classCatalog.map(c => c.career).filter(c => c && c !== '*'))];
-  const careerOptions = [...new Set([...enrolledCareers, ...catalogCareers])];
+  const careerOptions = [...new Set([...configuredCareers, ...enrolledCareers, ...catalogCareers])];
   buildOptions(periodCareerSelect, careerOptions, c => ({ value: c, label: c }));
+
+  buildOptions(settingsCoordinationSelect, state.coordinations, c => ({ value: c.id, label: c.name }));
   if (careerOptions.length) {
     periodCareerSelect.value = periodCareerSelect.value || careerOptions[0];
     const period = getActivePeriod(state);
@@ -894,6 +946,9 @@ async function importCSV() {
 
   BackendAPI.update(state => {
     const creditsPerBlock = getShiftConfig(state, shift).creditsPerBlock || 1;
+    if (!state.coordinationCareers.some(item => item.coordinationId === coordinationId && item.career === career)) {
+      state.coordinationCareers.push({ coordinationId, career });
+    }
     for (const r of rows) {
       const credits = Number(r.creditos || 1);
       state.classCatalog.push({
@@ -916,6 +971,34 @@ async function importCSV() {
   const result = generateScheduleForCareerShift(coordinationId, career, shift);
   csvFeedback.className = result.warnings.length ? 'warn' : 'ok';
   csvFeedback.textContent = `CSV importado (${rows.length} clases). Horario generado para ${career} (${shift}): ${result.placed} clase(s) ubicadas. ${result.warnings.length ? `Advertencias: ${result.warnings.join(' | ')}` : ''}`;
+  render();
+}
+
+function addCoordination() {
+  const name = (newCoordinationInput.value || '').trim();
+  if (!name) return;
+  BackendAPI.update(state => {
+    const exists = state.coordinations.some(coord => coord.name.toLowerCase() === name.toLowerCase());
+    if (exists) return;
+    state.coordinations.push({ id: uid(), name });
+  });
+  newCoordinationInput.value = '';
+  coordinationCareerFeedback.className = 'ok';
+  coordinationCareerFeedback.textContent = 'Coordinación agregada.';
+  render();
+}
+
+function addCoordinationCareer() {
+  const coordinationId = settingsCoordinationSelect.value;
+  const career = (settingsCareerInput.value || '').trim();
+  if (!coordinationId || !career) return;
+  BackendAPI.update(state => {
+    const exists = state.coordinationCareers.some(item => item.coordinationId === coordinationId && item.career.toLowerCase() === career.toLowerCase());
+    if (!exists) state.coordinationCareers.push({ coordinationId, career });
+  });
+  settingsCareerInput.value = '';
+  coordinationCareerFeedback.className = 'ok';
+  coordinationCareerFeedback.textContent = 'Carrera asociada a la coordinación.';
   render();
 }
 
@@ -1081,6 +1164,8 @@ assignBtn.addEventListener('click', addManualAssignment);
 changeClassBtn.addEventListener('click', changeScheduledClass);
 saveShiftSettingsBtn.addEventListener('click', saveShiftSettings);
 savePeriodEnrollmentBtn.addEventListener('click', savePeriodEnrollment);
+addCoordinationBtn.addEventListener('click', addCoordination);
+addCoordinationCareerBtn.addEventListener('click', addCoordinationCareer);
 resetShiftSettingsBtn.addEventListener('click', () => { BackendAPI.update(state => { state.settings.shifts[settingsShiftSelect.value] = structuredClone(DEFAULT_SHIFT_SETTINGS[settingsShiftSelect.value]); }); settingsFeedback.className = 'ok'; settingsFeedback.textContent = 'Turno restablecido a valores por defecto.'; render(); });
 simulateBtn.addEventListener('click', simulate);
 resetBtn.addEventListener('click', () => { Storage.reset(); simulationOutput.textContent = 'Datos reiniciados.'; render(); });
