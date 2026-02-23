@@ -5,135 +5,371 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>UCC · Generador de Horarios</title>
   <style>
-    :root { font-family: Inter, system-ui, Arial, sans-serif; color-scheme: light; }
-    body { margin: 0; background: #f5f7fb; color: #1f2937; }
-    header { background: #0f172a; color: #fff; padding: 1rem 1.25rem; }
-    h1 { margin: 0; font-size: 1.2rem; }
-    main { padding: 1rem; display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
-    section { background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(15, 23, 42, .08); padding: 1rem; }
-    h2 { font-size: 1rem; margin: 0 0 .8rem; }
+    :root {
+      font-family: Inter, system-ui, Arial, sans-serif;
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --surface: #ffffff;
+      --ink: #1f2937;
+      --muted: #475569;
+      --primary: #1d4ed8;
+      --primary-strong: #1e3a8a;
+      --border: #cbd5e1;
+      --card-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+      --header-height: 64px;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      height: var(--header-height);
+      background: #0f172a;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      padding: .75rem 1rem;
+      box-shadow: 0 2px 8px rgba(2, 6, 23, .35);
+    }
+
+    .topbar h1 {
+      margin: 0;
+      font-size: 1rem;
+      line-height: 1.3;
+      font-weight: 700;
+    }
+
+    .menu-btn {
+      width: 2.4rem;
+      height: 2.4rem;
+      flex: 0 0 auto;
+      border-radius: .7rem;
+      border: 1px solid rgba(255,255,255,.2);
+      background: rgba(255,255,255,.08);
+      color: #fff;
+      cursor: pointer;
+      font-size: 1.1rem;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      min-height: calc(100vh - var(--header-height));
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 6, 23, .45);
+      z-index: 20;
+      opacity: 0;
+      visibility: hidden;
+      transition: .25s;
+    }
+
+    .overlay.open {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .sidebar {
+      background: #0b1220;
+      color: #e2e8f0;
+      padding: 1rem .8rem;
+      border-right: 1px solid #1e293b;
+    }
+
+    .sidebar h2 { font-size: .9rem; margin: .2rem .5rem .8rem; color: #cbd5e1; }
+    .menu-list { display: grid; gap: .5rem; }
+    .menu-item {
+      width: 100%;
+      text-align: left;
+      border: 1px solid #334155;
+      border-radius: .65rem;
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: .6rem .7rem;
+      font-size: .88rem;
+      cursor: pointer;
+    }
+    .menu-item:hover,
+    .menu-item.active { border-color: #3b82f6; background: #13213c; }
+
+    main {
+      padding: 1rem;
+      display: grid;
+      gap: .8rem;
+      align-content: start;
+    }
+
+    details.panel {
+      background: var(--surface);
+      border-radius: 12px;
+      box-shadow: var(--card-shadow);
+      overflow: hidden;
+      border: 1px solid #e2e8f0;
+    }
+
+    details.panel > summary {
+      list-style: none;
+      cursor: pointer;
+      padding: .9rem 1rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      font-size: .98rem;
+    }
+
+    details.panel > summary::-webkit-details-marker { display: none; }
+    .summary-arrow { font-size: .85rem; color: #64748b; transition: transform .2s; }
+    details[open] .summary-arrow { transform: rotate(180deg); }
+    .panel-body { padding: 0 1rem 1rem; }
+
     .grid { display: grid; gap: .6rem; }
     .row { display: grid; gap: .6rem; grid-template-columns: repeat(2, minmax(0,1fr)); }
     .row3 { display: grid; gap: .6rem; grid-template-columns: repeat(3, minmax(0,1fr)); }
+
     label { font-size: .82rem; font-weight: 600; display: grid; gap: .25rem; }
-    select, input, button { border: 1px solid #cbd5e1; border-radius: 8px; padding: .5rem .55rem; font: inherit; }
-    button { background: #1d4ed8; color: #fff; border: none; cursor: pointer; }
+    select, input, button {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: .55rem .6rem;
+      font: inherit;
+      min-height: 2.4rem;
+    }
+
+    button { background: var(--primary); color: #fff; border: none; cursor: pointer; }
     button.secondary { background: #334155; }
-    button.ghost { background: #fff; color: #1d4ed8; border: 1px solid #1d4ed8; }
-    small, .hint { color: #475569; font-size: .78rem; }
+    button.ghost { background: #fff; color: var(--primary); border: 1px solid var(--primary); }
+
+    .actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+    .action-pill {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: var(--primary-strong);
+      border-radius: 999px;
+      padding: .45rem .75rem;
+      font-size: .82rem;
+      cursor: pointer;
+    }
+
+    small, .hint { color: var(--muted); font-size: .78rem; }
     table { border-collapse: collapse; width: 100%; font-size: .8rem; }
     th, td { border-bottom: 1px solid #e2e8f0; padding: .45rem; text-align: left; vertical-align: top; }
+    .table-wrap { width: 100%; overflow: auto; }
     .pill { font-size: .72rem; background: #e2e8f0; border-radius: 999px; padding: .1rem .5rem; display: inline-block; margin-right: .2rem; }
     .ok { color: #166534; font-weight: 600; }
     .warn { color: #b45309; font-weight: 600; }
     .error { color: #b91c1c; font-weight: 600; }
+
+    dialog.modal {
+      width: min(560px, calc(100vw - 1.5rem));
+      border: none;
+      border-radius: 14px;
+      padding: 0;
+      box-shadow: 0 20px 50px rgba(2,6,23,.4);
+    }
+
+    dialog::backdrop { background: rgba(2,6,23,.5); }
+
+    .modal-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: .85rem 1rem;
+      border-bottom: 1px solid #e2e8f0;
+      background: #f8fafc;
+    }
+
+    .modal-body { padding: 1rem; }
+
+    @media (max-width: 1024px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar {
+        position: fixed;
+        top: var(--header-height);
+        left: -290px;
+        bottom: 0;
+        width: 280px;
+        z-index: 25;
+        transition: left .25s;
+      }
+      .sidebar.open { left: 0; }
+    }
+
+    @media (max-width: 720px) {
+      .topbar h1 { font-size: .88rem; }
+      .row, .row3 { grid-template-columns: 1fr; }
+      details.panel > summary { font-size: .92rem; }
+      main { padding: .75rem; }
+    }
   </style>
 </head>
 <body>
-<header>
-  <h1>Universidad de Ciencias Comerciales · Generador de Horarios (Carreras + CSV + Docentes/Áreas)</h1>
+<header class="topbar">
+  <button class="menu-btn" id="menuToggle" aria-label="Abrir menú">☰</button>
+  <h1>Universidad de Ciencias Comerciales · Generador de Horarios</h1>
 </header>
-<main>
-  <section>
-    <h2>1) Cargar clases por CSV y listado de clases</h2>
-    <div class="grid">
-      <small>Columnas esperadas: <b>coordinacion,carrera,clase,compartida,carreras_compartidas,sesiones_semanales,bloques_por_sesion,turno,categoria,tipo_aula,docente,area</b></small>
-      <input id="csvInput" type="file" accept=".csv" />
-      <button id="importCsvBtn">Importar CSV</button>
-      <div id="csvFeedback" class="hint">Sin importación todavía.</div>
-      <table>
-        <thead>
-          <tr><th>Coordinación</th><th>Carrera</th><th>Clase</th><th>Características</th><th>Docente preferido</th><th>Área</th></tr>
-        </thead>
-        <tbody id="classTable"></tbody>
-      </table>
-    </div>
-  </section>
 
-  <section>
-    <h2>2) Gestión de docentes y áreas (coordinadores)</h2>
-    <div class="grid">
-      <div class="row">
-        <label>Nueva área
-          <input id="newAreaName" placeholder="Ej. Ciencias Básicas" />
-        </label>
-        <button id="addAreaBtn">Agregar área</button>
-      </div>
-      <div class="row3">
-        <label>Nuevo docente
-          <input id="newTeacherName" placeholder="Nombre docente" />
-        </label>
-        <label>Área principal
-          <select id="teacherAreaSelect"></select>
-        </label>
-        <button id="addTeacherBtn">Agregar docente</button>
-      </div>
-      <div class="row3">
-        <label>Clase
-          <select id="classAssignSelect"></select>
-        </label>
-        <label>Docente asignado
-          <select id="teacherAssignSelect"></select>
-        </label>
-        <button id="assignTeacherBtn" class="secondary">Asignar docente a clase</button>
-      </div>
-      <div id="catalogFeedback" class="hint">Catálogos listos.</div>
-      <table>
-        <thead><tr><th>Docente</th><th>Área</th></tr></thead>
-        <tbody id="teacherTable"></tbody>
-      </table>
-    </div>
-  </section>
+<div id="menuOverlay" class="overlay"></div>
+<div class="layout">
+  <aside class="sidebar" id="sidebarMenu">
+    <h2>Navegación rápida</h2>
+    <nav class="menu-list">
+      <button class="menu-item" data-target="panel-csv">1) Carga CSV y clases</button>
+      <button class="menu-item" data-target="panel-docentes">2) Docentes y áreas</button>
+      <button class="menu-item" data-target="panel-manual">3) Asignación manual</button>
+      <button class="menu-item" data-target="panel-auto">4) Generación automática</button>
+      <button class="menu-item" data-target="panel-horario">5) Horario consolidado</button>
+    </nav>
+  </aside>
 
-  <section>
-    <h2>3) Parámetros de generación manual</h2>
-    <div class="grid">
-      <div class="row">
-        <label>Coordinación
-          <select id="coordinationSelect"></select>
-        </label>
-        <label>Turno
-          <select id="shiftSelect"></select>
-        </label>
+  <main>
+    <details class="panel" id="panel-csv" open>
+      <summary>1) Cargar clases por CSV y listado de clases <span class="summary-arrow">▼</span></summary>
+      <div class="panel-body grid">
+        <small>Columnas esperadas: <b>coordinacion,carrera,clase,compartida,carreras_compartidas,sesiones_semanales,bloques_por_sesion,turno,categoria,tipo_aula,docente,area</b></small>
+        <input id="csvInput" type="file" accept=".csv" />
+        <button id="importCsvBtn">Importar CSV</button>
+        <div id="csvFeedback" class="hint">Sin importación todavía.</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Coordinación</th><th>Carrera</th><th>Clase</th><th>Características</th><th>Docente preferido</th><th>Área</th></tr>
+            </thead>
+            <tbody id="classTable"></tbody>
+          </table>
+        </div>
       </div>
-      <label>Clase
-        <select id="subjectSelect"></select>
+    </details>
+
+    <details class="panel" id="panel-docentes" open>
+      <summary>2) Gestión de docentes y áreas <span class="summary-arrow">▼</span></summary>
+      <div class="panel-body grid">
+        <div class="actions">
+          <button class="action-pill" data-open-dialog="areaDialog">➕ Nueva área</button>
+          <button class="action-pill" data-open-dialog="teacherDialog">👤 Nuevo docente</button>
+          <button class="action-pill" data-open-dialog="assignTeacherDialog">🔗 Asignar docente a clase</button>
+        </div>
+        <div id="catalogFeedback" class="hint">Catálogos listos.</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Docente</th><th>Área</th></tr></thead>
+            <tbody id="teacherTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </details>
+
+    <details class="panel" id="panel-manual" open>
+      <summary>3) Parámetros de generación manual <span class="summary-arrow">▼</span></summary>
+      <div class="panel-body grid">
+        <div class="row">
+          <label>Coordinación
+            <select id="coordinationSelect"></select>
+          </label>
+          <label>Turno
+            <select id="shiftSelect"></select>
+          </label>
+        </div>
+        <button class="secondary" data-open-dialog="manualAssignDialog">Asignar clase manualmente</button>
+        <div id="assignFeedback" class="hint">Sin acciones todavía.</div>
+      </div>
+    </details>
+
+    <details class="panel" id="panel-auto" open>
+      <summary>4) Generación automática por carrera <span class="summary-arrow">▼</span></summary>
+      <div class="panel-body grid">
+        <small>Genera horario para todas las carreras de la coordinación/turno y valida contra el resto (docente, aula y carrera).</small>
+        <div class="row">
+          <button id="simulateBtn" class="secondary">Generar automáticamente</button>
+          <button id="resetBtn" class="ghost">Reiniciar demo</button>
+        </div>
+        <pre id="simulationOutput" style="white-space: pre-wrap; background:#0b1220; color:#cbd5e1; padding:.8rem; border-radius:8px; min-height: 120px;"></pre>
+      </div>
+    </details>
+
+    <details class="panel" id="panel-horario" open>
+      <summary>5) Horario consolidado <span class="summary-arrow">▼</span></summary>
+      <div class="panel-body table-wrap">
+        <table>
+          <thead>
+            <tr><th>Coordinación/Carrera</th><th>Turno</th><th>Día/Bloque</th><th>Clase</th><th>Docente</th><th>Aula</th><th>Reglas</th></tr>
+          </thead>
+          <tbody id="scheduleTable"></tbody>
+        </table>
+      </div>
+    </details>
+  </main>
+</div>
+
+<dialog id="areaDialog" class="modal">
+  <form method="dialog">
+    <div class="modal-head"><strong>Nueva área</strong><button class="ghost">Cerrar</button></div>
+  </form>
+  <div class="modal-body grid">
+    <label>Nombre de área
+      <input id="newAreaName" placeholder="Ej. Ciencias Básicas" />
+    </label>
+    <button id="addAreaBtn">Agregar área</button>
+  </div>
+</dialog>
+
+<dialog id="teacherDialog" class="modal">
+  <form method="dialog">
+    <div class="modal-head"><strong>Nuevo docente</strong><button class="ghost">Cerrar</button></div>
+  </form>
+  <div class="modal-body grid">
+    <label>Nombre docente
+      <input id="newTeacherName" placeholder="Nombre docente" />
+    </label>
+    <label>Área principal
+      <select id="teacherAreaSelect"></select>
+    </label>
+    <button id="addTeacherBtn">Agregar docente</button>
+  </div>
+</dialog>
+
+<dialog id="assignTeacherDialog" class="modal">
+  <form method="dialog">
+    <div class="modal-head"><strong>Asignar docente a clase</strong><button class="ghost">Cerrar</button></div>
+  </form>
+  <div class="modal-body grid">
+    <label>Clase
+      <select id="classAssignSelect"></select>
+    </label>
+    <label>Docente asignado
+      <select id="teacherAssignSelect"></select>
+    </label>
+    <button id="assignTeacherBtn" class="secondary">Asignar docente a clase</button>
+  </div>
+</dialog>
+
+<dialog id="manualAssignDialog" class="modal">
+  <form method="dialog">
+    <div class="modal-head"><strong>Asignación manual</strong><button class="ghost">Cerrar</button></div>
+  </form>
+  <div class="modal-body grid">
+    <label>Clase
+      <select id="subjectSelect"></select>
+    </label>
+    <div class="row">
+      <label>Día
+        <select id="daySelect"></select>
       </label>
-      <div class="row">
-        <label>Día
-          <select id="daySelect"></select>
-        </label>
-        <label>Bloque inicial
-          <select id="blockStartSelect"></select>
-        </label>
-      </div>
-      <button id="assignBtn">Asignar clase con validaciones</button>
-      <div id="assignFeedback" class="hint">Sin acciones todavía.</div>
+      <label>Bloque inicial
+        <select id="blockStartSelect"></select>
+      </label>
     </div>
-  </section>
-
-  <section>
-    <h2>4) Generación automática por carrera</h2>
-    <div class="grid">
-      <small>Genera horario para todas las carreras de la coordinación/turno y valida contra el resto (docente, aula y carrera).</small>
-      <div class="row">
-        <button id="simulateBtn" class="secondary">Generar automáticamente</button>
-        <button id="resetBtn" class="ghost">Reiniciar demo</button>
-      </div>
-      <pre id="simulationOutput" style="white-space: pre-wrap; background:#0b1220; color:#cbd5e1; padding:.8rem; border-radius:8px; min-height: 120px;"></pre>
-    </div>
-  </section>
-
-  <section>
-    <h2>5) Horario consolidado</h2>
-    <table>
-      <thead>
-        <tr><th>Coordinación/Carrera</th><th>Turno</th><th>Día/Bloque</th><th>Clase</th><th>Docente</th><th>Aula</th><th>Reglas</th></tr>
-      </thead>
-      <tbody id="scheduleTable"></tbody>
-    </table>
-  </section>
-</main>
+    <button id="assignBtn">Asignar clase con validaciones</button>
+  </div>
+</dialog>
 
 <script>
 const SHIFT_CONFIG = {
@@ -344,6 +580,7 @@ function addArea() {
   if (!newAreaName.value.trim()) return;
   BackendAPI.update(state => state.areas.push({ id: uid(), name: newAreaName.value.trim() }));
   newAreaName.value = '';
+  areaDialog.close();
   catalogFeedback.textContent = 'Área agregada.';
   render();
 }
@@ -352,6 +589,7 @@ function addTeacher() {
   if (!newTeacherName.value.trim()) return;
   BackendAPI.update(state => state.teachers.push({ id: uid(), name: newTeacherName.value.trim(), areaId: teacherAreaSelect.value }));
   newTeacherName.value = '';
+  teacherDialog.close();
   catalogFeedback.textContent = 'Docente agregado.';
   render();
 }
@@ -361,6 +599,7 @@ function assignTeacherToClass() {
     const cls = byId(state.classCatalog, classAssignSelect.value);
     if (cls) cls.preferredTeacherId = teacherAssignSelect.value;
   });
+  assignTeacherDialog.close();
   catalogFeedback.textContent = 'Docente asignado a la clase.';
   render();
 }
@@ -379,6 +618,7 @@ function addManualAssignment() {
   BackendAPI.update(s => s.schedule.push(draft));
   assignFeedback.className = 'ok';
   assignFeedback.textContent = '✅ Clase asignada correctamente.';
+  manualAssignDialog.close();
   render();
 }
 
@@ -416,6 +656,44 @@ function simulate() {
   render();
 }
 
+function closeMenu() {
+  sidebarMenu.classList.remove('open');
+  menuOverlay.classList.remove('open');
+}
+
+function openMenu() {
+  sidebarMenu.classList.add('open');
+  menuOverlay.classList.add('open');
+}
+
+menuToggle.addEventListener('click', () => {
+  const isOpen = sidebarMenu.classList.contains('open');
+  if (isOpen) closeMenu();
+  else openMenu();
+});
+
+menuOverlay.addEventListener('click', closeMenu);
+
+document.querySelectorAll('.menu-item').forEach(button => {
+  button.addEventListener('click', () => {
+    const panel = document.getElementById(button.dataset.target);
+    if (panel) {
+      panel.open = true;
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    document.querySelectorAll('.menu-item').forEach(btn => btn.classList.remove('active'));
+    button.classList.add('active');
+    closeMenu();
+  });
+});
+
+document.querySelectorAll('[data-open-dialog]').forEach(button => {
+  button.addEventListener('click', () => {
+    const dialog = document.getElementById(button.dataset.openDialog);
+    if (dialog) dialog.showModal();
+  });
+});
+
 coordinationSelect.addEventListener('change', render);
 shiftSelect.addEventListener('change', render);
 importCsvBtn.addEventListener('click', importCSV);
@@ -425,6 +703,10 @@ assignTeacherBtn.addEventListener('click', assignTeacherToClass);
 assignBtn.addEventListener('click', addManualAssignment);
 simulateBtn.addEventListener('click', simulate);
 resetBtn.addEventListener('click', () => { Storage.reset(); simulationOutput.textContent = 'Datos reiniciados.'; render(); });
+
+if (window.innerWidth > 1024) {
+  sidebarMenu.classList.add('open');
+}
 
 render();
 </script>
