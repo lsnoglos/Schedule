@@ -417,6 +417,20 @@
         <label>Días habilitados (separados por coma)
           <input id="settingDays" placeholder="Lunes,Martes,Miércoles,Jueves,Viernes" />
         </label>
+        <div class="row">
+          <label>Receso (inicio - fin)
+            <div class="row" style="grid-template-columns:repeat(2,minmax(0,1fr));">
+              <input id="settingRecessStart" type="time" />
+              <input id="settingRecessEnd" type="time" />
+            </div>
+          </label>
+          <label>Almuerzo (inicio - fin)
+            <div class="row" style="grid-template-columns:repeat(2,minmax(0,1fr));">
+              <input id="settingLunchStart" type="time" />
+              <input id="settingLunchEnd" type="time" />
+            </div>
+          </label>
+        </div>
         <div class="inline-actions">
           <button id="saveShiftSettingsBtn">Guardar turno</button>
           <button id="resetShiftSettingsBtn" class="secondary">Restablecer por defecto</button>
@@ -590,6 +604,8 @@ const DEFAULT_SHIFT_SETTINGS = {
     creditsPerBlock: 1,
     maxTurnsPerDay: 4,
     days: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'],
+    recessBreak: { start: '', end: '' },
+    lunchBreak: { start: '', end: '' },
     blocks: [{ id:'D1',label:'8:00-8:45'},{id:'D2',label:'8:50-9:30'},{id:'D3',label:'9:30-10:00'},{id:'D4',label:'10:00-10:45'},{id:'D5',label:'10:45-11:30'},{id:'D6',label:'11:30-12:00'},{id:'D7',label:'1:00-1:45'},{id:'D8',label:'1:45-2:30'}]
   },
   sabatino: {
@@ -598,6 +614,8 @@ const DEFAULT_SHIFT_SETTINGS = {
     creditsPerBlock: 1.5,
     maxTurnsPerDay: 5,
     days: ['Sábado'],
+    recessBreak: { start: '', end: '' },
+    lunchBreak: { start: '', end: '' },
     blocks: [{id:'S1',label:'8:00-9:30'},{id:'S2',label:'9:40-11:10'},{id:'S3',label:'11:10-12:20'},{id:'S4',label:'1:00-2:30'},{id:'S5',label:'2:30-3:40'}]
   },
   dominical: {
@@ -606,6 +624,8 @@ const DEFAULT_SHIFT_SETTINGS = {
     creditsPerBlock: 1.25,
     maxTurnsPerDay: 4,
     days: ['Domingo'],
+    recessBreak: { start: '', end: '' },
+    lunchBreak: { start: '', end: '' },
     blocks: [{id:'O1',label:'8:00-9:10'},{id:'O2',label:'9:20-10:30'},{id:'O3',label:'10:40-11:50'},{id:'O4',label:'11:50-1:00'}]
   }
 };
@@ -793,6 +813,49 @@ function parseCSV(text) {
   });
 }
 
+function parseClockToMinutes(timeText, source = 'input') {
+  if (!timeText || !timeText.includes(':')) return null;
+  const [hoursRaw, minutesRaw] = timeText.split(':');
+  let hours = Number(hoursRaw);
+  const minutes = Number(minutesRaw);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  if (source === 'label' && hours >= 1 && hours <= 6) hours += 12;
+  return (hours * 60) + minutes;
+}
+
+function parseBlockRangeMinutes(blockLabel) {
+  if (!blockLabel?.includes('-')) return null;
+  const [start, end] = blockLabel.split('-').map(part => part.trim());
+  const startMinutes = parseClockToMinutes(start, 'label');
+  const endMinutes = parseClockToMinutes(end, 'label');
+  if (startMinutes == null || endMinutes == null || endMinutes <= startMinutes) return null;
+  return { start: startMinutes, end: endMinutes };
+}
+
+function rangesOverlap(a, b) {
+  return a.start < b.end && b.start < a.end;
+}
+
+function getBreakTypeForBlock(state, shift, blockId) {
+  const cfg = getShiftConfig(state, shift);
+  const block = cfg?.blocks?.find(item => item.id === blockId);
+  const blockRange = parseBlockRangeMinutes(block?.label || '');
+  if (!cfg || !blockRange) return null;
+
+  const recessStart = parseClockToMinutes(cfg.recessBreak?.start || '');
+  const recessEnd = parseClockToMinutes(cfg.recessBreak?.end || '');
+  if (recessStart != null && recessEnd != null && recessEnd > recessStart) {
+    if (rangesOverlap(blockRange, { start: recessStart, end: recessEnd })) return 'Receso';
+  }
+
+  const lunchStart = parseClockToMinutes(cfg.lunchBreak?.start || '');
+  const lunchEnd = parseClockToMinutes(cfg.lunchBreak?.end || '');
+  if (lunchStart != null && lunchEnd != null && lunchEnd > lunchStart) {
+    if (rangesOverlap(blockRange, { start: lunchStart, end: lunchEnd })) return 'Almuerzo';
+  }
+  return null;
+}
+
 function blocksFromStart(state, shift, startBlockId, count) {
   const blocks = getShiftConfig(state, shift).blocks;
   const idx = blocks.findIndex(b => b.id === startBlockId);
@@ -837,6 +900,8 @@ function validateAssignment(state, draft) {
   if (room.type !== cls.requiredRoomType) return [`La clase requiere recurso tipo ${cls.requiredRoomType}.`];
   if (draft.blockIds.length !== cls.blocksRequired) return [`${cls.name} requiere ${cls.blocksRequired} bloque(s) consecutivos.`];
   if (!getShiftConfig(state, draft.shift).days.includes(draft.day)) return [`El día ${draft.day} no está habilitado para el turno ${draft.shift}.`];
+  const reservedBreak = draft.blockIds.find(blockId => getBreakTypeForBlock(state, draft.shift, blockId));
+  if (reservedBreak) return [`El bloque ${reservedBreak} está reservado para ${getBreakTypeForBlock(state, draft.shift, reservedBreak)}.`];
 
   const collisions = [];
   for (const e of state.schedule) {
@@ -873,6 +938,8 @@ function buildCareerScheduleTable(state) {
   const head = `<tr><th>Bloque</th>${cfg.days.map(d => `<th>${d}</th>`).join('')}</tr>`;
   const body = cfg.blocks.map(block => {
     const cells = cfg.days.map(day => {
+      const breakType = getBreakTypeForBlock(state, selectedShift, block.id);
+      if (breakType) return `<td><strong>${breakType}</strong><br><small>${block.label}</small></td>`;
       const match = entries.find(e => e.day === day && e.blockIds.includes(block.id));
       if (!match) return '<td>-</td>';
       const cls = byId(state.classCatalog, match.classId);
@@ -929,6 +996,10 @@ function render() {
   settingCreditsPerBlock.value = shiftCfg.creditsPerBlock;
   settingMaxTurns.value = shiftCfg.maxTurnsPerDay;
   settingDays.value = shiftCfg.days.join(',');
+  settingRecessStart.value = shiftCfg.recessBreak?.start || '';
+  settingRecessEnd.value = shiftCfg.recessBreak?.end || '';
+  settingLunchStart.value = shiftCfg.lunchBreak?.start || '';
+  settingLunchEnd.value = shiftCfg.lunchBreak?.end || '';
 
   const enrolledCareers = [...new Set((state.periodEnrollments || []).map(e => e.career))];
   const configuredCareers = [...new Set((state.coordinationCareers || []).map(item => item.career))];
@@ -1153,9 +1224,23 @@ function changeScheduledClass() {
 function saveShiftSettings() {
   const shift = settingsShiftSelect.value;
   const days = settingDays.value.split(',').map(d => d.trim()).filter(Boolean);
+  const recessStart = settingRecessStart.value;
+  const recessEnd = settingRecessEnd.value;
+  const lunchStart = settingLunchStart.value;
+  const lunchEnd = settingLunchEnd.value;
   if (!days.length) {
     settingsFeedback.className = 'error';
     settingsFeedback.textContent = 'Debe indicar al menos un día para el turno.';
+    return;
+  }
+  const invalidRanges = [];
+  if ((recessStart && !recessEnd) || (!recessStart && recessEnd)) invalidRanges.push('receso');
+  if ((lunchStart && !lunchEnd) || (!lunchStart && lunchEnd)) invalidRanges.push('almuerzo');
+  if (recessStart && recessEnd && parseClockToMinutes(recessEnd) <= parseClockToMinutes(recessStart)) invalidRanges.push('receso');
+  if (lunchStart && lunchEnd && parseClockToMinutes(lunchEnd) <= parseClockToMinutes(lunchStart)) invalidRanges.push('almuerzo');
+  if (invalidRanges.length) {
+    settingsFeedback.className = 'error';
+    settingsFeedback.textContent = `Rango inválido para: ${[...new Set(invalidRanges)].join(', ')}.`;
     return;
   }
   BackendAPI.update(state => {
@@ -1164,6 +1249,8 @@ function saveShiftSettings() {
     current.creditsPerBlock = Number(settingCreditsPerBlock.value || current.creditsPerBlock);
     current.maxTurnsPerDay = Number(settingMaxTurns.value || current.maxTurnsPerDay);
     current.days = days;
+    current.recessBreak = { start: recessStart, end: recessEnd };
+    current.lunchBreak = { start: lunchStart, end: lunchEnd };
   });
   settingsFeedback.className = 'ok';
   settingsFeedback.textContent = `Configuración de ${shift} actualizada.`;
