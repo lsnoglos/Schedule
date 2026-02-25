@@ -365,6 +365,14 @@
             <select id="autoShiftSelect"></select>
           </label>
         </div>
+        <div class="row3">
+          <label>Periodo
+            <select id="autoPeriodSelect"></select>
+          </label>
+          <label>Año (trazabilidad)
+            <input id="autoYearInput" type="text" readonly />
+          </label>
+        </div>
         <div class="row">
           <button id="simulateBtn" class="secondary">Generar automáticamente</button>
           <button id="resetBtn" class="ghost">Reiniciar demo</button>
@@ -417,6 +425,10 @@
         <label>Días habilitados (separados por coma)
           <input id="settingDays" placeholder="Lunes,Martes,Miércoles,Jueves,Viernes" />
         </label>
+        <label>Periodos habilitados para el turno
+          <select id="settingShiftPeriods" multiple size="4"></select>
+          <small>Asocia uno o varios periodos al turno seleccionado.</small>
+        </label>
         <label>Prioridad de días (formato Día:Prioridad, separado por coma)
           <input id="settingDayPriority" placeholder="Martes:5,Jueves:4,Lunes:3,Miércoles:2,Viernes:1" />
           <small id="settingDayPriorityHint">Si no se define, se usa el orden natural de los días.</small>
@@ -440,6 +452,38 @@
           <button id="resetShiftSettingsBtn" class="secondary">Restablecer por defecto</button>
         </div>
         <div id="settingsFeedback" class="hint">Sin cambios.</div>
+      </div>
+
+      <div class="settings-card">
+        <h3 style="margin:0;">🗓️ Configuración de periodos</h3>
+        <small>Registra periodos del año actual y luego asígnalos a cada turno.</small>
+        <div class="row3">
+          <label>Nombre del periodo
+            <input id="periodNameInput" placeholder="Ej. I Cuatrimestre" />
+          </label>
+          <label>Tipo
+            <select id="periodTypeSelect">
+              <option value="cuatrimestral">Cuatrimestral</option>
+              <option value="trimestral">Trimestral</option>
+              <option value="bimestral">Bimestral</option>
+            </select>
+          </label>
+          <label>Año (actual)
+            <input id="periodYearDisplay" type="text" readonly />
+          </label>
+        </div>
+        <div class="row3">
+          <label>Mes inicio
+            <select id="periodStartMonthSelect"></select>
+          </label>
+          <label>Mes fin
+            <select id="periodEndMonthSelect"></select>
+          </label>
+          <label>&nbsp;
+            <button id="addPeriodBtn" class="secondary">Agregar periodo</button>
+          </label>
+        </div>
+        <div id="periodConfigFeedback" class="hint">Sin cambios.</div>
       </div>
 
 
@@ -611,6 +655,7 @@ const DEFAULT_SHIFT_SETTINGS = {
     dayPriority: {},
     recessBreak: { start: '', end: '' },
     lunchBreak: { start: '', end: '' },
+    periodIds: ['p1'],
     blocks: [{ id:'D1',label:'8:00-8:45'},{id:'D2',label:'8:50-9:30'},{id:'D3',label:'9:30-10:00'},{id:'D4',label:'10:00-10:45'},{id:'D5',label:'10:45-11:30'},{id:'D6',label:'11:30-12:00'},{id:'D7',label:'1:00-1:45'},{id:'D8',label:'1:45-2:30'}]
   },
   sabatino: {
@@ -622,6 +667,7 @@ const DEFAULT_SHIFT_SETTINGS = {
     dayPriority: {},
     recessBreak: { start: '', end: '' },
     lunchBreak: { start: '', end: '' },
+    periodIds: ['p1'],
     blocks: [{id:'S1',label:'8:00-9:30'},{id:'S2',label:'9:40-11:10'},{id:'S3',label:'11:10-12:20'},{id:'S4',label:'1:00-2:30'},{id:'S5',label:'2:30-3:40'}]
   },
   dominical: {
@@ -633,6 +679,7 @@ const DEFAULT_SHIFT_SETTINGS = {
     dayPriority: {},
     recessBreak: { start: '', end: '' },
     lunchBreak: { start: '', end: '' },
+    periodIds: ['p2'],
     blocks: [{id:'O1',label:'8:00-9:10'},{id:'O2',label:'9:20-10:30'},{id:'O3',label:'10:40-11:50'},{id:'O4',label:'11:50-1:00'}]
   }
 };
@@ -644,7 +691,10 @@ const DEMO_DATA = {
     { coordinationId: 'c1', career: 'Diseño Gráfico' },
     { coordinationId: 'c2', career: 'Contabilidad' }
   ],
-  periods: [{ id:'p1', name:'2026-I-D', shift:'diurno' }],
+  periods: [
+    { id:'p1', name:'I Cuatrimestre', type:'cuatrimestral', startMonth:'Enero', endMonth:'Abril', shift:'diurno', year: new Date().getFullYear() },
+    { id:'p2', name:'I Trimestre', type:'trimestral', startMonth:'Enero', endMonth:'Marzo', shift:'dominical', year: new Date().getFullYear() }
+  ],
   currentPeriodId: 'p1',
   periodEnrollments: [{ periodId:'p1', career:'Ing. Sistemas', students:92 }],
   areas: [{id:'a1',name:'Ciencias Básicas'},{id:'a2',name:'Tecnología'}],
@@ -673,14 +723,28 @@ const BackendAPI = {
       state.settings.shifts ||= structuredClone(DEFAULT_SHIFT_SETTINGS);
       for (const key of Object.keys(DEFAULT_SHIFT_SETTINGS)) {
         state.settings.shifts[key] = { ...DEFAULT_SHIFT_SETTINGS[key], ...(state.settings.shifts[key] || {}) };
+        state.settings.shifts[key].periodIds ||= [...(DEFAULT_SHIFT_SETTINGS[key].periodIds || [])];
       }
-      state.periods ||= [{ id:'p1', name:'2026-I-D', shift:'diurno' }];
-      state.currentPeriodId ||= state.periods[0]?.id;
+      state.periods ||= [{ id:'p1', name:'I Cuatrimestre', type:'cuatrimestral', startMonth:'Enero', endMonth:'Abril', shift:'diurno', year: CURRENT_YEAR }];
+      state.periods = state.periods.map(period => ({
+        ...period,
+        year: Number(period.year || CURRENT_YEAR),
+        type: period.type || 'cuatrimestral',
+        startMonth: period.startMonth || 'Enero',
+        endMonth: period.endMonth || 'Abril'
+      }));
+      const visiblePeriods = getVisiblePeriods(state);
+      state.currentPeriodId = visiblePeriods.some(period => period.id === state.currentPeriodId)
+        ? state.currentPeriodId
+        : (visiblePeriods[0]?.id || state.periods[0]?.id);
       state.periodEnrollments ||= [];
       state.coordinationCareers ||= [];
       state.rooms = (state.rooms || []).map(room => ({ ...room, capacity: Number(room.capacity || 30) }));
       state.teachers = (state.teachers || []).map(teacher => ({ ...teacher, category: teacher.category || 'general', areaIds: Array.isArray(teacher.areaIds) ? teacher.areaIds : (teacher.areaId ? [teacher.areaId] : []) }));
-      state.classCatalog = (state.classCatalog || []).map(cls => ({ ...cls, anio: Number(cls.anio || 1) }));
+      state.classCatalog = (state.classCatalog || []).map(cls => {
+        const years = normalizeAcademicYears(cls.years?.length ? cls.years : cls.anio);
+        return { ...cls, anio: years[0] || 1, years };
+      });
       for (const cls of state.classCatalog || []) {
         if (!cls.coordinationId || !cls.career || cls.career === '*') continue;
         const exists = state.coordinationCareers.some(item => item.coordinationId === cls.coordinationId && item.career === cls.career);
@@ -697,6 +761,33 @@ const overlap = (a, b) => a.some(x => b.includes(x));
 const uid = () => crypto.randomUUID();
 const getShiftConfig = (state, shift) => state.settings.shifts[shift];
 const CAREER_PREFIX_IGNORES = ['ing', 'ingenieria', 'ingeniería', 'lic', 'licenciatura', 'de', 'en'];
+const CURRENT_YEAR = new Date().getFullYear();
+const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+function normalizeAcademicYears(value) {
+  if (Array.isArray(value)) return [...new Set(value.map(v => Number(v)).filter(v => Number.isInteger(v) && v >= 1 && v <= 5))];
+  const raw = String(value ?? '').trim();
+  if (!raw) return [1];
+  const lowered = raw.toLowerCase();
+  if (['todos', 'todo', 'all', '*'].includes(lowered)) return [1, 2, 3, 4, 5];
+  const parsed = lowered.split(/[^\d]+/).map(token => Number(token)).filter(n => Number.isInteger(n) && n >= 1 && n <= 5);
+  return parsed.length ? [...new Set(parsed)] : [1];
+}
+
+function formatAcademicYears(years = []) {
+  const ordered = [...new Set((years || []).map(Number).filter(Boolean))].sort((a, b) => a - b);
+  return ordered.join(', ');
+}
+
+function getVisiblePeriods(state) {
+  return (state.periods || []).filter(period => Number(period.year) === CURRENT_YEAR);
+}
+
+function getPeriodsForShift(state, shift) {
+  const cfg = getShiftConfig(state, shift) || {};
+  const allowed = new Set(cfg.periodIds || []);
+  return getVisiblePeriods(state).filter(period => !allowed.size || allowed.has(period.id));
+}
 
 function parseDayPriorityInput(value, allowedDays = []) {
   const entries = String(value || '').split(',').map(item => item.trim()).filter(Boolean);
@@ -739,7 +830,8 @@ function getGenerationDayOrder(cfg, dayLoadCounter, previousDay = '') {
 }
 
 function getActivePeriod(state) {
-  return byId(state.periods || [], state.currentPeriodId) || state.periods?.[0] || null;
+  const visible = getVisiblePeriods(state);
+  return byId(visible, state.currentPeriodId) || visible[0] || null;
 }
 
 function getGroupOverlapKeys(entry) {
@@ -981,7 +1073,8 @@ function buildCareerScheduleTable(state) {
   careerShiftSelect.value = selectedShift;
 
   const cfg = getShiftConfig(state, selectedShift);
-  const entries = state.schedule.filter(s => s.coordinationId === coordinationId && s.shift === selectedShift && (s.career === selectedCareer || (s.careers || []).includes(selectedCareer))); 
+  const activePeriod = getActivePeriod(state);
+  const entries = state.schedule.filter(s => s.coordinationId === coordinationId && s.shift === selectedShift && (s.career === selectedCareer || (s.careers || []).includes(selectedCareer)) && (!activePeriod || s.periodId === activePeriod.id));
   const head = `<tr><th>Bloque</th>${cfg.days.map(d => `<th>${d}</th>`).join('')}</tr>`;
   const body = cfg.blocks.map(block => {
     const cells = cfg.days.map(day => {
@@ -1016,6 +1109,13 @@ function render() {
   shiftSelect.value = shift;
   csvShiftSelect.value = csvShiftSelect.value || shift;
   autoShiftSelect.value = autoShiftSelect.value || shift;
+
+  const periodsForAutoShift = getPeriodsForShift(state, autoShiftSelect.value);
+  buildOptions(autoPeriodSelect, periodsForAutoShift, period => ({ value: period.id, label: `${period.name} (${period.startMonth}-${period.endMonth})` }));
+  if (periodsForAutoShift.length && !periodsForAutoShift.some(period => period.id === autoPeriodSelect.value)) {
+    autoPeriodSelect.value = periodsForAutoShift[0].id;
+  }
+  autoYearInput.value = String(CURRENT_YEAR);
 
   const csvCareers = getCareersByCoordination(state, csvCoordinationSelect.value);
   buildOptions(csvCareerSelect, csvCareers, career => ({ value: career, label: career }));
@@ -1052,6 +1152,16 @@ function render() {
   settingRecessEnd.value = shiftCfg.recessBreak?.end || '';
   settingLunchStart.value = shiftCfg.lunchBreak?.start || '';
   settingLunchEnd.value = shiftCfg.lunchBreak?.end || '';
+  const visiblePeriods = getVisiblePeriods(state);
+  buildOptions(settingShiftPeriods, visiblePeriods, period => ({ value: period.id, label: `${period.name} (${period.type})` }));
+  const selectedShiftPeriods = new Set(shiftCfg.periodIds || []);
+  Array.from(settingShiftPeriods.options).forEach(option => {
+    option.selected = selectedShiftPeriods.has(option.value);
+  });
+
+  buildOptions(periodStartMonthSelect, MONTHS, month => ({ value: month, label: month }));
+  buildOptions(periodEndMonthSelect, MONTHS, month => ({ value: month, label: month }));
+  periodYearDisplay.value = String(CURRENT_YEAR);
 
   const enrolledCareers = [...new Set((state.periodEnrollments || []).map(e => e.career))];
   const configuredCareers = [...new Set((state.coordinationCareers || []).map(item => item.career))];
@@ -1071,7 +1181,7 @@ function render() {
     const coord = byId(state.coordinations, c.coordinationId)?.name || c.coordinationId;
     const preferredTeacher = getTeacherForClass(state, c);
     const area = byId(state.areas, c.areaId)?.name || 'Sin área';
-    return `<tr><td>${coord}</td><td>${c.career}</td><td>${c.name}</td><td><span class='pill'>${c.shift}</span><span class='pill'>${c.requiredRoomType}</span><span class='pill'>${c.shared ? 'Compartida' : 'No compartida'}</span><span class='pill'>Sesiones:${c.weeklySessions}</span></td><td>${preferredTeacher?.name || 'Sin asignar'}</td><td>${area}</td></tr>`;
+    return `<tr><td>${coord}</td><td>${c.career}</td><td>${c.name}</td><td><span class='pill'>${c.shift}</span><span class='pill'>${c.requiredRoomType}</span><span class='pill'>${c.shared ? 'Compartida' : 'No compartida'}</span><span class='pill'>Sesiones:${c.weeklySessions}</span><span class='pill'>Año:${formatAcademicYears(c.years || [c.anio])}</span></td><td>${preferredTeacher?.name || 'Sin asignar'}</td><td>${area}</td></tr>`;
   }).join('');
   teacherTable.innerHTML = state.teachers.map(t => `<tr><td>${t.name}</td><td>${getTeacherAreaNames(state, t).join(', ') || '-'}</td></tr>`).join('');
   const scheduleOptions = state.schedule.map(entry => {
@@ -1085,44 +1195,57 @@ function render() {
 }
 
 
-function generateScheduleForCareerShift(coordinationId, career, shift) {
+function generateScheduleForCareerShift(coordinationId, career, shift, periodId) {
   if (!career) return { placed: 0, warnings: ['Debe indicar una carrera para generar horario.'] };
   const state = BackendAPI.getState();
   const cfg = getShiftConfig(state, shift);
   if (!cfg) return { placed: 0, warnings: [`Turno inválido: ${shift}`] };
+  const period = byId(state.periods || [], periodId || state.currentPeriodId);
+  if (!period) return { placed: 0, warnings: ['Debe seleccionar un periodo válido.'] };
   BackendAPI.update(s => {
-    s.schedule = s.schedule.filter(entry => !(entry.coordinationId === coordinationId && entry.shift === shift && entry.career === career));
+    s.currentPeriodId = period.id;
+    s.schedule = s.schedule.filter(entry => !(entry.coordinationId === coordinationId && entry.shift === shift && entry.career === career && entry.periodId === period.id));
   });
   let placed = 0;
   const warnings = [];
   const classes = BackendAPI.getState().classCatalog.filter(c => c.coordinationId === coordinationId && c.shift === shift && (c.career === career || c.career === '*'));
-  const groups = generateGroupsForCareer(state, career);
-  const targetGroups = groups.length ? groups : [{ name: career, students: 0 }];
+  const years = [...new Set(classes.flatMap(cls => normalizeAcademicYears(cls.years?.length ? cls.years : cls.anio)))].sort((a, b) => a - b);
+  const targetYears = years.length ? years : [1];
   const dayLoadCounter = Object.fromEntries(cfg.days.map(day => [day, 0]));
   const previousDayByGroup = {};
-  for (const cls of classes) {
-    for (const group of targetGroups) {
+  for (const year of targetYears) {
+    const yearClasses = classes.filter(cls => normalizeAcademicYears(cls.years?.length ? cls.years : cls.anio).includes(year));
+    const groups = generateGroupsForCareer(state, career);
+    const targetGroups = groups.length ? groups : [{ name: career, students: 0 }];
+    for (const cls of yearClasses) {
+      for (const group of targetGroups) {
       for (let session = 0; session < cls.weeklySessions; session++) {
         let assigned = false;
-        const orderedDays = getGenerationDayOrder(cfg, dayLoadCounter, previousDayByGroup[group.name]);
+        const yearGroupName = `${group.name}-A${year}`;
+        const orderedDays = getGenerationDayOrder(cfg, dayLoadCounter, previousDayByGroup[yearGroupName]);
         for (const day of orderedDays) {
           for (const block of cfg.blocks) {
             const freshState = BackendAPI.getState();
-            const draft = classToScheduleDraft(freshState, cls, day, block.id, { career, groupName: group.name, groupSize: group.students });
+            const draft = classToScheduleDraft(freshState, cls, day, block.id, { career, groupName: yearGroupName, groupSize: group.students });
+            draft.periodId = period.id;
+            draft.periodName = period.name;
+            draft.year = CURRENT_YEAR;
+            draft.academicYear = year;
             if (draft.blockIds.length !== cls.blocksRequired) continue;
             const errors = validateAssignment(freshState, draft);
             if (!errors.length) {
               BackendAPI.update(s => s.schedule.push(draft));
               placed++;
               dayLoadCounter[day] = (dayLoadCounter[day] || 0) + 1;
-              previousDayByGroup[group.name] = day;
+              previousDayByGroup[yearGroupName] = day;
               assigned = true;
               break;
             }
           }
           if (assigned) break;
         }
-        if (!assigned) warnings.push(`No se pudo ubicar ${cls.name} para el grupo ${group.name}.`);
+        if (!assigned) warnings.push(`No se pudo ubicar ${cls.name} para ${yearGroupName}.`);
+      }
       }
     }
   }
@@ -1148,6 +1271,7 @@ async function importCSV() {
   const coordinationId = csvCoordinationSelect.value || BackendAPI.getState().coordinations[0]?.id;
   const career = (csvCareerSelect.value || '').trim();
   const shift = csvShiftSelect.value || 'diurno';
+  const periodId = autoPeriodSelect.value || BackendAPI.getState().currentPeriodId;
   if (!career) {
     csvFeedback.className = 'error';
     csvFeedback.textContent = 'Debe seleccionar la carrera antes de importar.';
@@ -1162,6 +1286,7 @@ async function importCSV() {
     }
     for (const r of rows) {
       const credits = Number(r.creditos || 1);
+      const years = normalizeAcademicYears(r.anio);
       state.classCatalog.push({
         id: uid(),
         coordinationId,
@@ -1172,7 +1297,8 @@ async function importCSV() {
         weeklySessions: 1,
         blocksRequired: Math.max(1, Math.ceil(credits / creditsPerBlock)),
         shift,
-        anio: Number(r.anio || 1),
+        anio: years[0] || 1,
+        years,
         category: r.categoria || 'general',
         requiredRoomType: (r.tipo || 'aula').toLowerCase(),
         preferredTeacherId: '',
@@ -1181,7 +1307,7 @@ async function importCSV() {
       });
     }
   });
-  const result = generateScheduleForCareerShift(coordinationId, career, shift);
+  const result = generateScheduleForCareerShift(coordinationId, career, shift, periodId);
   csvFeedback.className = result.warnings.length ? 'warn' : 'ok';
   csvFeedback.textContent = `CSV importado (${rows.length} clases). Horario generado para ${career} (${shift}): ${result.placed} clase(s) ubicadas. ${result.warnings.length ? `Advertencias: ${result.warnings.join(' | ')}` : ''}`;
   showNotification({
@@ -1281,6 +1407,7 @@ function changeScheduledClass() {
 function saveShiftSettings() {
   const shift = settingsShiftSelect.value;
   const days = settingDays.value.split(',').map(d => d.trim()).filter(Boolean);
+  const periodIds = selectedValues(settingShiftPeriods);
   const recessStart = settingRecessStart.value;
   const recessEnd = settingRecessEnd.value;
   const lunchStart = settingLunchStart.value;
@@ -1307,6 +1434,7 @@ function saveShiftSettings() {
     current.creditsPerBlock = Number(settingCreditsPerBlock.value || current.creditsPerBlock);
     current.maxTurnsPerDay = Number(settingMaxTurns.value || current.maxTurnsPerDay);
     current.days = days;
+    current.periodIds = periodIds;
     current.dayPriority = dayPriority;
     current.recessBreak = { start: recessStart, end: recessEnd };
     current.lunchBreak = { start: lunchStart, end: lunchEnd };
@@ -1316,11 +1444,31 @@ function saveShiftSettings() {
   render();
 }
 
+function addPeriod() {
+  const name = (periodNameInput.value || '').trim();
+  const type = periodTypeSelect.value || 'cuatrimestral';
+  const startMonth = periodStartMonthSelect.value;
+  const endMonth = periodEndMonthSelect.value;
+  if (!name || !startMonth || !endMonth) {
+    periodConfigFeedback.className = 'error';
+    periodConfigFeedback.textContent = 'Complete nombre, tipo y rango de meses.';
+    return;
+  }
+  BackendAPI.update(state => {
+    state.periods.push({ id: uid(), name, type, startMonth, endMonth, year: CURRENT_YEAR });
+  });
+  periodNameInput.value = '';
+  periodConfigFeedback.className = 'ok';
+  periodConfigFeedback.textContent = `Periodo ${name} agregado para ${CURRENT_YEAR}.`;
+  render();
+}
+
 function simulate() {
   const state = BackendAPI.getState();
   const coordinationId = autoCoordinationSelect.value;
   const career = autoCareerSelect.value;
   const shift = autoShiftSelect.value;
+  const periodId = autoPeriodSelect.value;
   const csvCoordinationId = csvCoordinationSelect.value;
   const csvCareer = (csvCareerSelect.value || '').trim();
   const csvShift = csvShiftSelect.value;
@@ -1328,24 +1476,30 @@ function simulate() {
   if (!coordinationId) missing.push('coordinación');
   if (!career) missing.push('carrera');
   if (!shift) missing.push('turno');
+  if (!periodId) missing.push('periodo');
   if (!state.teachers.length) missing.push('docentes registrados');
   const hasCsvClasses = state.classCatalog.some(cls => cls.importedFromCsv && cls.coordinationId === coordinationId && cls.career === career && cls.shift === shift);
   if (!hasCsvClasses) missing.push('clases cargadas por CSV para la selección actual');
   if (coordinationId !== csvCoordinationId || career !== csvCareer || shift !== csvShift) {
     missing.push('que la selección de generación automática coincida con la selección realizada en el módulo CSV');
   }
+  const validPeriodForShift = getPeriodsForShift(state, shift).some(period => period.id === periodId);
+  if (!validPeriodForShift) missing.push('un periodo asociado al turno seleccionado');
   if (missing.length) {
     const details = `Debe seleccionar/completar: ${missing.join(', ')}.`;
     simulationOutput.textContent = details;
     showNotification({ type: 'warn', title: 'No se puede generar horario', message: details, timeout: 5500 });
     return;
   }
-  const result = generateScheduleForCareerShift(coordinationId, career, shift);
+  const period = byId(state.periods, periodId);
+  const result = generateScheduleForCareerShift(coordinationId, career, shift, periodId);
   const shiftCfg = getShiftConfig(state, shift);
   simulationOutput.textContent = `Planificación completada.
 Coordinación: ${byId(state.coordinations, coordinationId)?.name || coordinationId}
 Carrera: ${career}
 Turno: ${shiftCfg?.label || shift}
+Periodo: ${period?.name || periodId}
+Año: ${CURRENT_YEAR}
 Clases colocadas: ${result.placed}
 Advertencias: ${result.warnings.length}
 ${result.warnings.map(w => `- ${w}`).join('\n')}`;
@@ -1385,6 +1539,7 @@ csvCoordinationSelect.addEventListener('change', render);
 csvShiftSelect.addEventListener('change', render);
 autoCoordinationSelect.addEventListener('change', render);
 autoShiftSelect.addEventListener('change', render);
+autoPeriodSelect.addEventListener('change', render);
 careerCoordinationSelect.addEventListener('change', render);
 careerSelect.addEventListener('change', render);
 careerShiftSelect.addEventListener('change', render);
@@ -1400,6 +1555,7 @@ saveShiftSettingsBtn.addEventListener('click', saveShiftSettings);
 savePeriodEnrollmentBtn.addEventListener('click', savePeriodEnrollment);
 addCoordinationBtn.addEventListener('click', addCoordination);
 addCoordinationCareerBtn.addEventListener('click', addCoordinationCareer);
+addPeriodBtn.addEventListener('click', addPeriod);
 resetShiftSettingsBtn.addEventListener('click', () => { BackendAPI.update(state => { state.settings.shifts[settingsShiftSelect.value] = structuredClone(DEFAULT_SHIFT_SETTINGS[settingsShiftSelect.value]); }); settingsFeedback.className = 'ok'; settingsFeedback.textContent = 'Turno restablecido a valores por defecto.'; render(); });
 simulateBtn.addEventListener('click', simulate);
 resetBtn.addEventListener('click', () => { Storage.reset(); simulationOutput.textContent = 'Datos reiniciados.'; render(); });
