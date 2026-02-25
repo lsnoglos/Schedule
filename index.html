@@ -417,6 +417,10 @@
         <label>Días habilitados (separados por coma)
           <input id="settingDays" placeholder="Lunes,Martes,Miércoles,Jueves,Viernes" />
         </label>
+        <label>Prioridad de días (formato Día:Prioridad, separado por coma)
+          <input id="settingDayPriority" placeholder="Martes:5,Jueves:4,Lunes:3,Miércoles:2,Viernes:1" />
+          <small id="settingDayPriorityHint">Si no se define, se usa el orden natural de los días.</small>
+        </label>
         <div class="row">
           <label>Receso (inicio - fin)
             <div class="row" style="grid-template-columns:repeat(2,minmax(0,1fr));">
@@ -604,6 +608,7 @@ const DEFAULT_SHIFT_SETTINGS = {
     creditsPerBlock: 1,
     maxTurnsPerDay: 4,
     days: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'],
+    dayPriority: {},
     recessBreak: { start: '', end: '' },
     lunchBreak: { start: '', end: '' },
     blocks: [{ id:'D1',label:'8:00-8:45'},{id:'D2',label:'8:50-9:30'},{id:'D3',label:'9:30-10:00'},{id:'D4',label:'10:00-10:45'},{id:'D5',label:'10:45-11:30'},{id:'D6',label:'11:30-12:00'},{id:'D7',label:'1:00-1:45'},{id:'D8',label:'1:45-2:30'}]
@@ -614,6 +619,7 @@ const DEFAULT_SHIFT_SETTINGS = {
     creditsPerBlock: 1.5,
     maxTurnsPerDay: 5,
     days: ['Sábado'],
+    dayPriority: {},
     recessBreak: { start: '', end: '' },
     lunchBreak: { start: '', end: '' },
     blocks: [{id:'S1',label:'8:00-9:30'},{id:'S2',label:'9:40-11:10'},{id:'S3',label:'11:10-12:20'},{id:'S4',label:'1:00-2:30'},{id:'S5',label:'2:30-3:40'}]
@@ -624,6 +630,7 @@ const DEFAULT_SHIFT_SETTINGS = {
     creditsPerBlock: 1.25,
     maxTurnsPerDay: 4,
     days: ['Domingo'],
+    dayPriority: {},
     recessBreak: { start: '', end: '' },
     lunchBreak: { start: '', end: '' },
     blocks: [{id:'O1',label:'8:00-9:10'},{id:'O2',label:'9:20-10:30'},{id:'O3',label:'10:40-11:50'},{id:'O4',label:'11:50-1:00'}]
@@ -690,6 +697,46 @@ const overlap = (a, b) => a.some(x => b.includes(x));
 const uid = () => crypto.randomUUID();
 const getShiftConfig = (state, shift) => state.settings.shifts[shift];
 const CAREER_PREFIX_IGNORES = ['ing', 'ingenieria', 'ingeniería', 'lic', 'licenciatura', 'de', 'en'];
+
+function parseDayPriorityInput(value, allowedDays = []) {
+  const entries = String(value || '').split(',').map(item => item.trim()).filter(Boolean);
+  const allowed = new Set(allowedDays);
+  const result = {};
+  for (const entry of entries) {
+    const [dayRaw, weightRaw] = entry.split(':').map(part => part?.trim());
+    const weight = Number(weightRaw);
+    if (!dayRaw || !Number.isFinite(weight)) continue;
+    if (allowed.size && !allowed.has(dayRaw)) continue;
+    result[dayRaw] = weight;
+  }
+  return result;
+}
+
+function formatDayPriority(priority = {}, orderedDays = []) {
+  const knownDays = orderedDays.filter(day => priority[day] != null);
+  const extraDays = Object.keys(priority).filter(day => !knownDays.includes(day));
+  return [...knownDays, ...extraDays].map(day => `${day}:${priority[day]}`).join(',');
+}
+
+function getGenerationDayOrder(cfg, dayLoadCounter, previousDay = '') {
+  const naturalOrder = cfg.days || [];
+  const dayPriority = cfg.dayPriority || {};
+  const dayIndex = new Map(naturalOrder.map((day, index) => [day, index]));
+  const previousIndex = dayIndex.get(previousDay);
+  return [...naturalOrder].sort((a, b) => {
+    const loadDiff = (dayLoadCounter[a] || 0) - (dayLoadCounter[b] || 0);
+    if (loadDiff !== 0) return loadDiff;
+
+    const isAConsecutive = previousIndex != null && Math.abs((dayIndex.get(a) ?? 0) - previousIndex) === 1;
+    const isBConsecutive = previousIndex != null && Math.abs((dayIndex.get(b) ?? 0) - previousIndex) === 1;
+    if (isAConsecutive !== isBConsecutive) return isAConsecutive ? 1 : -1;
+
+    const priorityDiff = Number(dayPriority[b] || 0) - Number(dayPriority[a] || 0);
+    if (priorityDiff !== 0) return priorityDiff;
+
+    return (dayIndex.get(a) ?? 0) - (dayIndex.get(b) ?? 0);
+  });
+}
 
 function getActivePeriod(state) {
   return byId(state.periods || [], state.currentPeriodId) || state.periods?.[0] || null;
@@ -996,6 +1043,11 @@ function render() {
   settingCreditsPerBlock.value = shiftCfg.creditsPerBlock;
   settingMaxTurns.value = shiftCfg.maxTurnsPerDay;
   settingDays.value = shiftCfg.days.join(',');
+  settingDayPriority.value = formatDayPriority(shiftCfg.dayPriority, shiftCfg.days);
+  settingDayPriority.disabled = shiftCfg.days.length <= 1;
+  settingDayPriorityHint.textContent = shiftCfg.days.length <= 1
+    ? 'La prioridad se habilita cuando el turno tiene más de un día.'
+    : 'Si no se define, se usa el orden natural de los días.';
   settingRecessStart.value = shiftCfg.recessBreak?.start || '';
   settingRecessEnd.value = shiftCfg.recessBreak?.end || '';
   settingLunchStart.value = shiftCfg.lunchBreak?.start || '';
@@ -1046,11 +1098,14 @@ function generateScheduleForCareerShift(coordinationId, career, shift) {
   const classes = BackendAPI.getState().classCatalog.filter(c => c.coordinationId === coordinationId && c.shift === shift && (c.career === career || c.career === '*'));
   const groups = generateGroupsForCareer(state, career);
   const targetGroups = groups.length ? groups : [{ name: career, students: 0 }];
+  const dayLoadCounter = Object.fromEntries(cfg.days.map(day => [day, 0]));
+  const previousDayByGroup = {};
   for (const cls of classes) {
     for (const group of targetGroups) {
       for (let session = 0; session < cls.weeklySessions; session++) {
         let assigned = false;
-        for (const day of cfg.days) {
+        const orderedDays = getGenerationDayOrder(cfg, dayLoadCounter, previousDayByGroup[group.name]);
+        for (const day of orderedDays) {
           for (const block of cfg.blocks) {
             const freshState = BackendAPI.getState();
             const draft = classToScheduleDraft(freshState, cls, day, block.id, { career, groupName: group.name, groupSize: group.students });
@@ -1059,6 +1114,8 @@ function generateScheduleForCareerShift(coordinationId, career, shift) {
             if (!errors.length) {
               BackendAPI.update(s => s.schedule.push(draft));
               placed++;
+              dayLoadCounter[day] = (dayLoadCounter[day] || 0) + 1;
+              previousDayByGroup[group.name] = day;
               assigned = true;
               break;
             }
@@ -1228,6 +1285,7 @@ function saveShiftSettings() {
   const recessEnd = settingRecessEnd.value;
   const lunchStart = settingLunchStart.value;
   const lunchEnd = settingLunchEnd.value;
+  const dayPriority = days.length > 1 ? parseDayPriorityInput(settingDayPriority.value, days) : {};
   if (!days.length) {
     settingsFeedback.className = 'error';
     settingsFeedback.textContent = 'Debe indicar al menos un día para el turno.';
@@ -1249,6 +1307,7 @@ function saveShiftSettings() {
     current.creditsPerBlock = Number(settingCreditsPerBlock.value || current.creditsPerBlock);
     current.maxTurnsPerDay = Number(settingMaxTurns.value || current.maxTurnsPerDay);
     current.days = days;
+    current.dayPriority = dayPriority;
     current.recessBreak = { start: recessStart, end: recessEnd };
     current.lunchBreak = { start: lunchStart, end: lunchEnd };
   });
