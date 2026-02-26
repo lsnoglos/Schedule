@@ -810,10 +810,16 @@ function getVisiblePeriods(state) {
   return (state.periods || []);
 }
 
-function getPeriodsForShift(state, shift) {
+function getEnabledPeriodsForShift(state, shift) {
   const cfg = getShiftConfig(state, shift) || {};
   const allowed = new Set(cfg.periodIds || []);
-  return getVisiblePeriods(state).filter(period => !allowed.size || allowed.has(period.id));
+  return getVisiblePeriods(state).filter(period => allowed.has(period.id));
+}
+
+function getPeriodsForCareerView(state, shift) {
+  const periodIdsFromData = new Set((state.schedule || []).filter(item => item.shift === shift).map(item => item.periodId).filter(Boolean));
+  if (!periodIdsFromData.size) return getVisiblePeriods(state);
+  return getVisiblePeriods(state).filter(period => periodIdsFromData.has(period.id));
 }
 
 function parseDayPriorityInput(value, allowedDays = []) {
@@ -1136,7 +1142,7 @@ function buildCareerScheduleTable(state) {
   const selectedShift = careerShiftSelect.value || 'diurno';
   careerShiftSelect.value = selectedShift;
 
-  const periodsForShift = getPeriodsForShift(state, selectedShift);
+  const periodsForShift = getPeriodsForCareerView(state, selectedShift);
   const yearOptions = [...new Set(periodsForShift.map(period => Number(period.year)).filter(Number.isFinite))].sort((a, b) => b - a);
   buildOptions(careerYearSelect, yearOptions, year => ({ value: String(year), label: String(year) }));
   const selectedYear = Number(careerYearSelect.value || yearOptions[0] || CURRENT_YEAR);
@@ -1180,7 +1186,7 @@ function render() {
   csvCoordinationSelect.value = csvCoordination;
   csvShiftSelect.value = csvShift;
 
-  const periodsForCsvShift = getPeriodsForShift(state, csvShift);
+  const periodsForCsvShift = getEnabledPeriodsForShift(state, csvShift);
   const csvYearOptions = [...new Set(periodsForCsvShift.map(period => Number(period.year)).filter(Number.isFinite))].sort((a, b) => b - a);
   buildOptions(csvYearSelect, csvYearOptions, year => ({ value: String(year), label: String(year) }));
   const selectedCsvYear = Number(csvYearSelect.value || csvYearOptions[0] || CURRENT_YEAR);
@@ -1231,7 +1237,7 @@ function render() {
   buildOptions(periodStartMonthSelect, MONTHS, month => ({ value: month, label: month }));
   buildOptions(periodEndMonthSelect, MONTHS, month => ({ value: month, label: month }));
   periodYearDisplay.value = String(CURRENT_YEAR);
-  const periodsForSettingShift = getPeriodsForShift(state, settingsShift);
+  const periodsForSettingShift = getEnabledPeriodsForShift(state, settingsShift);
   shiftPeriodList.innerHTML = periodsForSettingShift.length
     ? periodsForSettingShift.map(period => `<tr><td>${period.name}</td><td>${period.type}</td><td>${period.startMonth} - ${period.endMonth}</td><td><button class="secondary" data-remove-period-id="${period.id}" style="min-height:2rem;">Eliminar</button></td></tr>`).join('')
     : '<tr><td colspan="4">No hay periodos asignados para este turno.</td></tr>';
@@ -1580,7 +1586,7 @@ function simulate() {
   if (!state.teachers.length) missing.push('docentes registrados');
   const hasCsvClasses = state.classCatalog.some(cls => cls.importedFromCsv && cls.coordinationId === coordinationId && cls.career === career && cls.shift === shift);
   if (!hasCsvClasses) missing.push('clases cargadas por CSV para la selección actual');
-  const validPeriodForShift = getPeriodsForShift(state, shift).some(period => period.id === periodId);
+  const validPeriodForShift = getEnabledPeriodsForShift(state, shift).some(period => period.id === periodId);
   if (!validPeriodForShift) missing.push('un periodo asociado al turno seleccionado');
   if (missing.length) {
     const details = `Debe seleccionar/completar: ${missing.join(', ')}.`;
