@@ -422,6 +422,9 @@
             <input id="settingMaxTurns" type="number" min="1" step="1" />
           </label>
         </div>
+        <label>Hora de inicio de clases
+          <input id="settingClassStartTime" type="time" value="08:00" />
+        </label>
         <label>Días habilitados (separados por coma)
           <input id="settingDays" placeholder="Lunes,Martes,Miércoles,Jueves,Viernes" />
         </label>
@@ -430,8 +433,8 @@
           <small>Asocia uno o varios periodos al turno seleccionado.</small>
         </label>
         <label>Prioridad de días (formato Día:Prioridad, separado por coma)
-          <input id="settingDayPriority" placeholder="Martes:5,Jueves:4,Lunes:3,Miércoles:2,Viernes:1" />
-          <small id="settingDayPriorityHint">Si no se define, se usa el orden natural de los días.</small>
+          <input id="settingDayPriority" placeholder="Lunes:1,Martes:2,Miércoles:3,Jueves:4,Viernes:5" />
+          <small id="settingDayPriorityHint">Si no se define, se usa por defecto: Lunes:1,Martes:2,Miércoles:3,Jueves:4,Viernes:5.</small>
         </label>
         <div class="row">
           <label>Receso (inicio - fin)
@@ -457,6 +460,7 @@
       <div class="settings-card">
         <h3 style="margin:0;">🗓️ Configuración de periodos</h3>
         <small>Registra periodos del año actual y luego asígnalos a cada turno.</small>
+        <small>También puedes revisar y eliminar periodos asignados al turno seleccionado en configuración por turno.</small>
         <div class="row3">
           <label>Nombre del periodo
             <input id="periodNameInput" placeholder="Ej. I Cuatrimestre" />
@@ -482,6 +486,12 @@
           <label>&nbsp;
             <button id="addPeriodBtn" class="secondary">Agregar periodo</button>
           </label>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Periodo</th><th>Tipo</th><th>Rango</th><th>Acción</th></tr></thead>
+            <tbody id="shiftPeriodList"></tbody>
+          </table>
         </div>
         <div id="periodConfigFeedback" class="hint">Sin cambios.</div>
       </div>
@@ -651,6 +661,7 @@ const DEFAULT_SHIFT_SETTINGS = {
     blockMinutes: 45,
     creditsPerBlock: 1,
     maxTurnsPerDay: 4,
+    classStartTime: '08:00',
     days: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'],
     dayPriority: {},
     recessBreak: { start: '', end: '' },
@@ -663,6 +674,7 @@ const DEFAULT_SHIFT_SETTINGS = {
     blockMinutes: 90,
     creditsPerBlock: 1.5,
     maxTurnsPerDay: 5,
+    classStartTime: '08:00',
     days: ['Sábado'],
     dayPriority: {},
     recessBreak: { start: '', end: '' },
@@ -675,6 +687,7 @@ const DEFAULT_SHIFT_SETTINGS = {
     blockMinutes: 70,
     creditsPerBlock: 1.25,
     maxTurnsPerDay: 4,
+    classStartTime: '08:00',
     days: ['Domingo'],
     dayPriority: {},
     recessBreak: { start: '', end: '' },
@@ -763,6 +776,13 @@ const getShiftConfig = (state, shift) => state.settings.shifts[shift];
 const CAREER_PREFIX_IGNORES = ['ing', 'ingenieria', 'ingeniería', 'lic', 'licenciatura', 'de', 'en'];
 const CURRENT_YEAR = new Date().getFullYear();
 const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+const DEFAULT_WEEKDAY_PRIORITY = {
+  Lunes: 1,
+  Martes: 2,
+  Miércoles: 3,
+  Jueves: 4,
+  Viernes: 5
+};
 
 function normalizeAcademicYears(value) {
   if (Array.isArray(value)) return [...new Set(value.map(v => Number(v)).filter(v => Number.isInteger(v) && v >= 1 && v <= 5))];
@@ -801,6 +821,21 @@ function parseDayPriorityInput(value, allowedDays = []) {
     result[dayRaw] = weight;
   }
   return result;
+}
+
+function getDefaultDayPriority(days = []) {
+  const cleanedDays = (days || []).map(day => String(day || '').trim()).filter(Boolean);
+  const hasWeekday = cleanedDays.some(day => DEFAULT_WEEKDAY_PRIORITY[day] != null);
+  if (hasWeekday) {
+    return cleanedDays.reduce((acc, day, index) => {
+      acc[day] = DEFAULT_WEEKDAY_PRIORITY[day] ?? (index + 1);
+      return acc;
+    }, {});
+  }
+  return cleanedDays.reduce((acc, day, index) => {
+    acc[day] = index + 1;
+    return acc;
+  }, {});
 }
 
 function formatDayPriority(priority = {}, orderedDays = []) {
@@ -1142,12 +1177,10 @@ function render() {
   settingBlockMinutes.value = shiftCfg.blockMinutes;
   settingCreditsPerBlock.value = shiftCfg.creditsPerBlock;
   settingMaxTurns.value = shiftCfg.maxTurnsPerDay;
+  settingClassStartTime.value = shiftCfg.classStartTime || '08:00';
   settingDays.value = shiftCfg.days.join(',');
-  settingDayPriority.value = formatDayPriority(shiftCfg.dayPriority, shiftCfg.days);
-  settingDayPriority.disabled = shiftCfg.days.length <= 1;
-  settingDayPriorityHint.textContent = shiftCfg.days.length <= 1
-    ? 'La prioridad se habilita cuando el turno tiene más de un día.'
-    : 'Si no se define, se usa el orden natural de los días.';
+  settingDayPriority.value = formatDayPriority(shiftCfg.dayPriority, shiftCfg.days) || formatDayPriority(getDefaultDayPriority(shiftCfg.days), shiftCfg.days);
+  settingDayPriorityHint.textContent = 'Si no se define, se usa por defecto: Lunes:1,Martes:2,Miércoles:3,Jueves:4,Viernes:5.';
   settingRecessStart.value = shiftCfg.recessBreak?.start || '';
   settingRecessEnd.value = shiftCfg.recessBreak?.end || '';
   settingLunchStart.value = shiftCfg.lunchBreak?.start || '';
@@ -1162,6 +1195,10 @@ function render() {
   buildOptions(periodStartMonthSelect, MONTHS, month => ({ value: month, label: month }));
   buildOptions(periodEndMonthSelect, MONTHS, month => ({ value: month, label: month }));
   periodYearDisplay.value = String(CURRENT_YEAR);
+  const periodsForSettingShift = getPeriodsForShift(state, settingsShift);
+  shiftPeriodList.innerHTML = periodsForSettingShift.length
+    ? periodsForSettingShift.map(period => `<tr><td>${period.name}</td><td>${period.type}</td><td>${period.startMonth} - ${period.endMonth}</td><td><button class="secondary" data-remove-period-id="${period.id}" style="min-height:2rem;">Eliminar</button></td></tr>`).join('')
+    : '<tr><td colspan="4">No hay periodos asignados para este turno.</td></tr>';
 
   const enrolledCareers = [...new Set((state.periodEnrollments || []).map(e => e.career))];
   const configuredCareers = [...new Set((state.coordinationCareers || []).map(item => item.career))];
@@ -1412,7 +1449,8 @@ function saveShiftSettings() {
   const recessEnd = settingRecessEnd.value;
   const lunchStart = settingLunchStart.value;
   const lunchEnd = settingLunchEnd.value;
-  const dayPriority = days.length > 1 ? parseDayPriorityInput(settingDayPriority.value, days) : {};
+  const parsedDayPriority = parseDayPriorityInput(settingDayPriority.value, days);
+  const dayPriority = Object.keys(parsedDayPriority).length ? parsedDayPriority : getDefaultDayPriority(days);
   if (!days.length) {
     settingsFeedback.className = 'error';
     settingsFeedback.textContent = 'Debe indicar al menos un día para el turno.';
@@ -1433,6 +1471,7 @@ function saveShiftSettings() {
     current.blockMinutes = Number(settingBlockMinutes.value || current.blockMinutes);
     current.creditsPerBlock = Number(settingCreditsPerBlock.value || current.creditsPerBlock);
     current.maxTurnsPerDay = Number(settingMaxTurns.value || current.maxTurnsPerDay);
+    current.classStartTime = settingClassStartTime.value || current.classStartTime || '08:00';
     current.days = days;
     current.periodIds = periodIds;
     current.dayPriority = dayPriority;
@@ -1441,6 +1480,28 @@ function saveShiftSettings() {
   });
   settingsFeedback.className = 'ok';
   settingsFeedback.textContent = `Configuración de ${shift} actualizada.`;
+  render();
+}
+
+function removePeriod(periodId) {
+  if (!periodId) return;
+  const state = BackendAPI.getState();
+  const period = byId(state.periods, periodId);
+  if (!period) return;
+  BackendAPI.update(draft => {
+    draft.periods = (draft.periods || []).filter(item => item.id !== periodId);
+    draft.settings.shifts = Object.fromEntries(Object.entries(draft.settings.shifts || {}).map(([shiftKey, shiftCfg]) => {
+      return [shiftKey, { ...shiftCfg, periodIds: (shiftCfg.periodIds || []).filter(id => id !== periodId) }];
+    }));
+    draft.periodEnrollments = (draft.periodEnrollments || []).filter(item => item.periodId !== periodId);
+    draft.schedule = (draft.schedule || []).filter(item => item.periodId !== periodId);
+    const visible = getVisiblePeriods(draft);
+    draft.currentPeriodId = visible.some(item => item.id === draft.currentPeriodId)
+      ? draft.currentPeriodId
+      : (visible[0]?.id || '');
+  });
+  periodConfigFeedback.className = 'ok';
+  periodConfigFeedback.textContent = `Periodo ${period.name} eliminado.`;
   render();
 }
 
@@ -1556,9 +1617,13 @@ savePeriodEnrollmentBtn.addEventListener('click', savePeriodEnrollment);
 addCoordinationBtn.addEventListener('click', addCoordination);
 addCoordinationCareerBtn.addEventListener('click', addCoordinationCareer);
 addPeriodBtn.addEventListener('click', addPeriod);
+shiftPeriodList.addEventListener('click', event => {
+  const periodId = event.target?.dataset?.removePeriodId;
+  if (periodId) removePeriod(periodId);
+});
 resetShiftSettingsBtn.addEventListener('click', () => { BackendAPI.update(state => { state.settings.shifts[settingsShiftSelect.value] = structuredClone(DEFAULT_SHIFT_SETTINGS[settingsShiftSelect.value]); }); settingsFeedback.className = 'ok'; settingsFeedback.textContent = 'Turno restablecido a valores por defecto.'; render(); });
 simulateBtn.addEventListener('click', simulate);
-resetBtn.addEventListener('click', () => { Storage.reset(); simulationOutput.textContent = 'Datos reiniciados.'; render(); });
+resetBtn.addEventListener('click', () => { BackendAPI.update(state => { state.schedule = []; }); simulationOutput.textContent = 'Horario reiniciado sin borrar la configuración.'; render(); });
 
 if (window.innerWidth > 1024) sidebarMenu.classList.add('open');
 render();
