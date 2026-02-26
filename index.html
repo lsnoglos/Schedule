@@ -296,7 +296,7 @@
       <button class="menu-item" data-target="panel-csv">1) Carga CSV y clases</button>
       <button class="menu-item" data-target="panel-manual">2) Asignación / cambios manuales</button>
       <button class="menu-item" data-target="panel-auto">3) Generación automática</button>
-      <button class="menu-item" data-target="panel-filtro">4) Vista por coordinación/carrera/turno</button>
+      <button class="menu-item" data-target="panel-filtro">4) Vista por coordinación/carrera/turno/periodo/año</button>
     </nav>
   </aside>
 
@@ -317,6 +317,14 @@
             <select id="csvShiftSelect"></select>
           </label>
         </div>
+        <div class="row">
+          <label>Periodo
+            <select id="csvPeriodSelect"></select>
+          </label>
+          <label>Año
+            <select id="csvYearSelect"></select>
+          </label>
+        </div>
         <input id="csvInput" type="file" accept=".csv" />
         <button id="importCsvBtn">Importar CSV</button>
         <div id="csvFeedback" class="hint">Sin importación todavía.</div>
@@ -334,14 +342,7 @@
     <details class="panel" id="panel-manual" open>
       <summary>2) Asignación y cambios manuales <span class="summary-arrow">▼</span></summary>
       <div class="panel-body grid">
-        <div class="row">
-          <label>Coordinación
-            <select id="coordinationSelect"></select>
-          </label>
-          <label>Turno
-            <select id="shiftSelect"></select>
-          </label>
-        </div>
+        <small>Usa automáticamente la coordinación/carrera/turno seleccionadas en la carga CSV.</small>
         <div class="actions">
           <button class="secondary" data-open-dialog="manualAssignDialog">Agregar clase manualmente</button>
           <button class="ghost" data-open-dialog="changeClassDialog">Cambiar clase existente</button>
@@ -353,26 +354,7 @@
     <details class="panel" id="panel-auto" open>
       <summary>3) Generación automática por carrera <span class="summary-arrow">▼</span></summary>
       <div class="panel-body grid">
-        <small>Genera horario únicamente para la coordinación/carrera/turno seleccionadas en la carga CSV y valida todas las selecciones antes de continuar.</small>
-        <div class="row3">
-          <label>Coordinación
-            <select id="autoCoordinationSelect"></select>
-          </label>
-          <label>Carrera
-            <select id="autoCareerSelect"></select>
-          </label>
-          <label>Turno
-            <select id="autoShiftSelect"></select>
-          </label>
-        </div>
-        <div class="row3">
-          <label>Periodo
-            <select id="autoPeriodSelect"></select>
-          </label>
-          <label>Año (trazabilidad)
-            <input id="autoYearInput" type="text" readonly />
-          </label>
-        </div>
+        <small>Genera horario para la selección definida en Cargar CSV (coordinación/carrera/turno/periodo/año).</small>
         <div class="row">
           <button id="simulateBtn" class="secondary">Generar automáticamente</button>
           <button id="resetBtn" class="ghost">Reiniciar demo</button>
@@ -383,7 +365,7 @@
 
 
     <details class="panel" id="panel-filtro" open>
-      <summary>4) Vista por coordinación / carrera / turno <span class="summary-arrow">▼</span></summary>
+      <summary>4) Vista por coordinación / carrera / turno / periodo / año <span class="summary-arrow">▼</span></summary>
       <div class="panel-body grid">
         <div class="row3">
           <label>Coordinación
@@ -394,6 +376,14 @@
           </label>
           <label>Turno
             <select id="careerShiftSelect"></select>
+          </label>
+        </div>
+        <div class="row">
+          <label>Periodo
+            <select id="careerPeriodSelect"></select>
+          </label>
+          <label>Año
+            <select id="careerYearSelect"></select>
           </label>
         </div>
         <div class="table-wrap">
@@ -800,7 +790,7 @@ function formatAcademicYears(years = []) {
 }
 
 function getVisiblePeriods(state) {
-  return (state.periods || []).filter(period => Number(period.year) === CURRENT_YEAR);
+  return (state.periods || []);
 }
 
 function getPeriodsForShift(state, shift) {
@@ -1107,9 +1097,25 @@ function buildCareerScheduleTable(state) {
   const selectedShift = careerShiftSelect.value || 'diurno';
   careerShiftSelect.value = selectedShift;
 
+  const periodsForShift = getPeriodsForShift(state, selectedShift);
+  const yearOptions = [...new Set(periodsForShift.map(period => Number(period.year)).filter(Number.isFinite))].sort((a, b) => b - a);
+  buildOptions(careerYearSelect, yearOptions, year => ({ value: String(year), label: String(year) }));
+  const selectedYear = Number(careerYearSelect.value || yearOptions[0] || CURRENT_YEAR);
+  careerYearSelect.value = String(selectedYear);
+  const periodsForYear = periodsForShift.filter(period => Number(period.year) === selectedYear);
+  buildOptions(careerPeriodSelect, periodsForYear, period => ({ value: period.id, label: `${period.name} (${period.startMonth}-${period.endMonth})` }));
+  if (periodsForYear.length && !periodsForYear.some(period => period.id === careerPeriodSelect.value)) {
+    careerPeriodSelect.value = periodsForYear[0].id;
+  }
+  const selectedPeriodId = careerPeriodSelect.value || '';
+
   const cfg = getShiftConfig(state, selectedShift);
-  const activePeriod = getActivePeriod(state);
-  const entries = state.schedule.filter(s => s.coordinationId === coordinationId && s.shift === selectedShift && (s.career === selectedCareer || (s.careers || []).includes(selectedCareer)) && (!activePeriod || s.periodId === activePeriod.id));
+  const entries = state.schedule.filter(s => {
+    const matchesCareer = s.career === selectedCareer || (s.careers || []).includes(selectedCareer);
+    const matchesPeriod = selectedPeriodId ? s.periodId === selectedPeriodId : true;
+    const matchesYear = Number(s.year || byId(state.periods, s.periodId)?.year) === selectedYear;
+    return s.coordinationId === coordinationId && s.shift === selectedShift && matchesCareer && matchesPeriod && matchesYear;
+  });
   const head = `<tr><th>Bloque</th>${cfg.days.map(d => `<th>${d}</th>`).join('')}</tr>`;
   const body = cfg.blocks.map(block => {
     const cells = cfg.days.map(day => {
@@ -1127,48 +1133,40 @@ function buildCareerScheduleTable(state) {
 
 function render() {
   const state = BackendAPI.getState();
-  const coordination = coordinationSelect.value || state.coordinations[0]?.id;
-  const shift = shiftSelect.value || 'diurno';
-  const csvCoordination = csvCoordinationSelect.value || coordination;
-  const autoCoordination = autoCoordinationSelect.value || coordination;
+  const csvCoordination = csvCoordinationSelect.value || state.coordinations[0]?.id;
+  const csvShift = csvShiftSelect.value || 'diurno';
 
-  buildOptions(coordinationSelect, state.coordinations, c => ({ value: c.id, label: c.name }));
   buildOptions(csvCoordinationSelect, state.coordinations, c => ({ value: c.id, label: c.name }));
-  buildOptions(autoCoordinationSelect, state.coordinations, c => ({ value: c.id, label: c.name }));
-  buildOptions(shiftSelect, Object.keys(state.settings.shifts), k => ({ value: k, label: state.settings.shifts[k].label }));
   buildOptions(csvShiftSelect, Object.keys(state.settings.shifts), k => ({ value: k, label: state.settings.shifts[k].label }));
-  buildOptions(autoShiftSelect, Object.keys(state.settings.shifts), k => ({ value: k, label: state.settings.shifts[k].label }));
-  coordinationSelect.value = coordination;
   csvCoordinationSelect.value = csvCoordination;
-  autoCoordinationSelect.value = autoCoordination;
-  shiftSelect.value = shift;
-  csvShiftSelect.value = csvShiftSelect.value || shift;
-  autoShiftSelect.value = autoShiftSelect.value || shift;
+  csvShiftSelect.value = csvShift;
 
-  const periodsForAutoShift = getPeriodsForShift(state, autoShiftSelect.value);
-  buildOptions(autoPeriodSelect, periodsForAutoShift, period => ({ value: period.id, label: `${period.name} (${period.startMonth}-${period.endMonth})` }));
-  if (periodsForAutoShift.length && !periodsForAutoShift.some(period => period.id === autoPeriodSelect.value)) {
-    autoPeriodSelect.value = periodsForAutoShift[0].id;
+  const periodsForCsvShift = getPeriodsForShift(state, csvShift);
+  const csvYearOptions = [...new Set(periodsForCsvShift.map(period => Number(period.year)).filter(Number.isFinite))].sort((a, b) => b - a);
+  buildOptions(csvYearSelect, csvYearOptions, year => ({ value: String(year), label: String(year) }));
+  const selectedCsvYear = Number(csvYearSelect.value || csvYearOptions[0] || CURRENT_YEAR);
+  csvYearSelect.value = String(selectedCsvYear);
+  const periodsForCsvYear = periodsForCsvShift.filter(period => Number(period.year) === selectedCsvYear);
+  buildOptions(csvPeriodSelect, periodsForCsvYear, period => ({ value: period.id, label: `${period.name} (${period.startMonth}-${period.endMonth})` }));
+  if (periodsForCsvYear.length && !periodsForCsvYear.some(period => period.id === csvPeriodSelect.value)) {
+    csvPeriodSelect.value = periodsForCsvYear[0].id;
   }
-  autoYearInput.value = String(CURRENT_YEAR);
 
-  const csvCareers = getCareersByCoordination(state, csvCoordinationSelect.value);
+  const csvCareers = getCareersByCoordination(state, csvCoordination);
   buildOptions(csvCareerSelect, csvCareers, career => ({ value: career, label: career }));
+  const csvCareer = (csvCareerSelect.value || '').trim();
 
-  const autoCareers = getCareersByCoordination(state, autoCoordinationSelect.value);
-  buildOptions(autoCareerSelect, autoCareers, career => ({ value: career, label: career }));
-
-  const classes = state.classCatalog.filter(c => c.coordinationId === coordination && c.shift === shift);
+  const classes = state.classCatalog.filter(c => c.coordinationId === csvCoordination && c.shift === csvShift && (!csvCareer || c.career === csvCareer));
   buildOptions(subjectSelect, classes, c => ({ value: c.id, label: `${c.name} · ${c.career}` }));
   buildOptions(classAssignSelect, state.classCatalog, c => ({ value: c.id, label: `${c.name} (${c.career})` }));
   buildOptions(teacherAssignSelect, state.teachers, t => ({ value: t.id, label: t.name }));
   buildOptions(manualTeacherSelect, state.teachers, t => ({ value: t.id, label: t.name }));
   buildOptions(changeTeacherSelect, state.teachers, t => ({ value: t.id, label: t.name }));
   buildOptions(teacherAreaSelect, state.areas, a => ({ value: a.id, label: a.name }));
-  buildOptions(daySelect, getShiftConfig(state, shift).days, d => ({ value: d, label: d }));
-  buildOptions(blockStartSelect, getShiftConfig(state, shift).blocks, b => ({ value: b.id, label: `${b.id} · ${b.label}` }));
-  buildOptions(changeDaySelect, getShiftConfig(state, shift).days, d => ({ value: d, label: d }));
-  buildOptions(changeBlockStartSelect, getShiftConfig(state, shift).blocks, b => ({ value: b.id, label: `${b.id} · ${b.label}` }));
+  buildOptions(daySelect, getShiftConfig(state, csvShift).days, d => ({ value: d, label: d }));
+  buildOptions(blockStartSelect, getShiftConfig(state, csvShift).blocks, b => ({ value: b.id, label: `${b.id} · ${b.label}` }));
+  buildOptions(changeDaySelect, getShiftConfig(state, csvShift).days, d => ({ value: d, label: d }));
+  buildOptions(changeBlockStartSelect, getShiftConfig(state, csvShift).blocks, b => ({ value: b.id, label: `${b.id} · ${b.label}` }));
   buildOptions(settingsShiftSelect, Object.keys(state.settings.shifts), k => ({ value: k, label: state.settings.shifts[k].label }));
 
   const settingsShift = settingsShiftSelect.value || 'diurno';
@@ -1186,7 +1184,7 @@ function render() {
   settingLunchStart.value = shiftCfg.lunchBreak?.start || '';
   settingLunchEnd.value = shiftCfg.lunchBreak?.end || '';
   const visiblePeriods = getVisiblePeriods(state);
-  buildOptions(settingShiftPeriods, visiblePeriods, period => ({ value: period.id, label: `${period.name} (${period.type})` }));
+  buildOptions(settingShiftPeriods, visiblePeriods, period => ({ value: period.id, label: `${period.name} (${period.type} ${period.year})` }));
   const selectedShiftPeriods = new Set(shiftCfg.periodIds || []);
   Array.from(settingShiftPeriods.options).forEach(option => {
     option.selected = selectedShiftPeriods.has(option.value);
@@ -1266,7 +1264,7 @@ function generateScheduleForCareerShift(coordinationId, career, shift, periodId)
             const draft = classToScheduleDraft(freshState, cls, day, block.id, { career, groupName: yearGroupName, groupSize: group.students });
             draft.periodId = period.id;
             draft.periodName = period.name;
-            draft.year = CURRENT_YEAR;
+            draft.year = Number(period?.year || CURRENT_YEAR);
             draft.academicYear = year;
             if (draft.blockIds.length !== cls.blocksRequired) continue;
             const errors = validateAssignment(freshState, draft);
@@ -1308,7 +1306,7 @@ async function importCSV() {
   const coordinationId = csvCoordinationSelect.value || BackendAPI.getState().coordinations[0]?.id;
   const career = (csvCareerSelect.value || '').trim();
   const shift = csvShiftSelect.value || 'diurno';
-  const periodId = autoPeriodSelect.value || BackendAPI.getState().currentPeriodId;
+  const periodId = csvPeriodSelect.value || BackendAPI.getState().currentPeriodId;
   if (!career) {
     csvFeedback.className = 'error';
     csvFeedback.textContent = 'Debe seleccionar la carrera antes de importar.';
@@ -1409,6 +1407,10 @@ function addManualAssignment() {
   const cls = byId(state.classCatalog, subjectSelect.value);
   if (!cls) return;
   const draft = classToScheduleDraft(state, cls, daySelect.value, blockStartSelect.value, { teacherId: manualTeacherSelect.value });
+  const selectedPeriod = byId(state.periods, csvPeriodSelect.value);
+  draft.periodId = selectedPeriod?.id || state.currentPeriodId;
+  draft.periodName = selectedPeriod?.name || '';
+  draft.year = Number(selectedPeriod?.year || CURRENT_YEAR);
   const errors = validateAssignment(state, draft);
   if (errors.length) { assignFeedback.className = 'error'; assignFeedback.textContent = `❌ ${errors.join(' | ')}`; return; }
   BackendAPI.update(s => s.schedule.push(draft));
@@ -1424,6 +1426,10 @@ function changeScheduledClass() {
   const cls = byId(state.classCatalog, entry.classId);
   if (!cls) return;
   const updated = classToScheduleDraft(state, cls, changeDaySelect.value, changeBlockStartSelect.value, { career: entry.career, groupName: entry.academicGroups?.[0] || entry.career, teacherId: changeTeacherSelect.value });
+  const selectedPeriod = byId(state.periods, csvPeriodSelect.value);
+  updated.periodId = selectedPeriod?.id || entry.periodId;
+  updated.periodName = selectedPeriod?.name || entry.periodName || '';
+  updated.year = Number(selectedPeriod?.year || entry.year || CURRENT_YEAR);
   updated.id = entry.id;
   const withoutCurrent = state.schedule.filter(s => s.id !== entry.id);
   const errors = validateAssignment({ ...state, schedule: withoutCurrent }, updated);
@@ -1526,13 +1532,10 @@ function addPeriod() {
 
 function simulate() {
   const state = BackendAPI.getState();
-  const coordinationId = autoCoordinationSelect.value;
-  const career = autoCareerSelect.value;
-  const shift = autoShiftSelect.value;
-  const periodId = autoPeriodSelect.value;
-  const csvCoordinationId = csvCoordinationSelect.value;
-  const csvCareer = (csvCareerSelect.value || '').trim();
-  const csvShift = csvShiftSelect.value;
+  const coordinationId = csvCoordinationSelect.value;
+  const career = (csvCareerSelect.value || '').trim();
+  const shift = csvShiftSelect.value;
+  const periodId = csvPeriodSelect.value;
   const missing = [];
   if (!coordinationId) missing.push('coordinación');
   if (!career) missing.push('carrera');
@@ -1541,9 +1544,6 @@ function simulate() {
   if (!state.teachers.length) missing.push('docentes registrados');
   const hasCsvClasses = state.classCatalog.some(cls => cls.importedFromCsv && cls.coordinationId === coordinationId && cls.career === career && cls.shift === shift);
   if (!hasCsvClasses) missing.push('clases cargadas por CSV para la selección actual');
-  if (coordinationId !== csvCoordinationId || career !== csvCareer || shift !== csvShift) {
-    missing.push('que la selección de generación automática coincida con la selección realizada en el módulo CSV');
-  }
   const validPeriodForShift = getPeriodsForShift(state, shift).some(period => period.id === periodId);
   if (!validPeriodForShift) missing.push('un periodo asociado al turno seleccionado');
   if (missing.length) {
@@ -1560,7 +1560,7 @@ Coordinación: ${byId(state.coordinations, coordinationId)?.name || coordination
 Carrera: ${career}
 Turno: ${shiftCfg?.label || shift}
 Periodo: ${period?.name || periodId}
-Año: ${CURRENT_YEAR}
+Año: ${period?.year || CURRENT_YEAR}
 Clases colocadas: ${result.placed}
 Advertencias: ${result.warnings.length}
 ${result.warnings.map(w => `- ${w}`).join('\n')}`;
@@ -1594,16 +1594,15 @@ document.querySelectorAll('[data-open-dialog]').forEach(button => button.addEven
 navMainBtn.addEventListener('click', () => { mainView.classList.add('active'); settingsView.classList.remove('active'); navMainBtn.classList.add('active'); navSettingsBtn.classList.remove('active'); });
 navSettingsBtn.addEventListener('click', () => { settingsView.classList.add('active'); mainView.classList.remove('active'); navSettingsBtn.classList.add('active'); navMainBtn.classList.remove('active'); });
 
-coordinationSelect.addEventListener('change', render);
-shiftSelect.addEventListener('change', render);
 csvCoordinationSelect.addEventListener('change', render);
 csvShiftSelect.addEventListener('change', render);
-autoCoordinationSelect.addEventListener('change', render);
-autoShiftSelect.addEventListener('change', render);
-autoPeriodSelect.addEventListener('change', render);
+csvPeriodSelect.addEventListener('change', render);
+csvYearSelect.addEventListener('change', render);
 careerCoordinationSelect.addEventListener('change', render);
 careerSelect.addEventListener('change', render);
 careerShiftSelect.addEventListener('change', render);
+careerPeriodSelect.addEventListener('change', render);
+careerYearSelect.addEventListener('change', render);
 settingsShiftSelect.addEventListener('change', render);
 periodCareerSelect.addEventListener('change', render);
 importCsvBtn.addEventListener('click', importCSV);
