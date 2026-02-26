@@ -415,16 +415,13 @@
         <label>Hora de inicio de clases
           <input id="settingClassStartTime" type="time" value="08:00" />
         </label>
-        <label>Días habilitados (separados por coma)
-          <input id="settingDays" placeholder="Lunes,Martes,Miércoles,Jueves,Viernes" />
+        <label>Días habilitados y prioridad (formato Día o Día:Prioridad, separado por coma)
+          <input id="settingDays" placeholder="Lunes:1,Martes:2,Miércoles:3,Jueves:4,Viernes:5" />
+          <small id="settingDaysHint">Si no defines prioridad, se asigna automáticamente según el orden indicado.</small>
         </label>
         <label>Periodos habilitados para el turno
           <select id="settingShiftPeriods" multiple size="4"></select>
           <small>Asocia uno o varios periodos al turno seleccionado.</small>
-        </label>
-        <label>Prioridad de días (formato Día:Prioridad, separado por coma)
-          <input id="settingDayPriority" placeholder="Lunes:1,Martes:2,Miércoles:3,Jueves:4,Viernes:5" />
-          <small id="settingDayPriorityHint">Si no se define, se usa por defecto: Lunes:1,Martes:2,Miércoles:3,Jueves:4,Viernes:5.</small>
         </label>
         <div class="row">
           <label>Receso (inicio - fin)
@@ -813,6 +810,23 @@ function parseDayPriorityInput(value, allowedDays = []) {
   return result;
 }
 
+function parseDaysAndPriorityInput(value) {
+  const entries = String(value || '').split(',').map(item => item.trim()).filter(Boolean);
+  const days = [];
+  const parsedPriority = {};
+  for (const entry of entries) {
+    const [dayRaw, weightRaw] = entry.split(':').map(part => part?.trim());
+    if (!dayRaw) continue;
+    if (!days.includes(dayRaw)) days.push(dayRaw);
+    if (weightRaw == null || weightRaw === '') continue;
+    const weight = Number(weightRaw);
+    if (!Number.isFinite(weight)) continue;
+    parsedPriority[dayRaw] = weight;
+  }
+  const fullPriority = { ...getDefaultDayPriority(days), ...parsedPriority };
+  return { days, dayPriority: fullPriority };
+}
+
 function getDefaultDayPriority(days = []) {
   const cleanedDays = (days || []).map(day => String(day || '').trim()).filter(Boolean);
   const hasWeekday = cleanedDays.some(day => DEFAULT_WEEKDAY_PRIORITY[day] != null);
@@ -832,6 +846,11 @@ function formatDayPriority(priority = {}, orderedDays = []) {
   const knownDays = orderedDays.filter(day => priority[day] != null);
   const extraDays = Object.keys(priority).filter(day => !knownDays.includes(day));
   return [...knownDays, ...extraDays].map(day => `${day}:${priority[day]}`).join(',');
+}
+
+function formatDaysWithPriority(days = [], priority = {}) {
+  const explicit = parseDayPriorityInput(formatDayPriority(priority, days), days);
+  return days.map(day => (explicit[day] != null ? `${day}:${explicit[day]}` : day)).join(',');
 }
 
 function getGenerationDayOrder(cfg, dayLoadCounter, previousDay = '') {
@@ -1176,9 +1195,8 @@ function render() {
   settingCreditsPerBlock.value = shiftCfg.creditsPerBlock;
   settingMaxTurns.value = shiftCfg.maxTurnsPerDay;
   settingClassStartTime.value = shiftCfg.classStartTime || '08:00';
-  settingDays.value = shiftCfg.days.join(',');
-  settingDayPriority.value = formatDayPriority(shiftCfg.dayPriority, shiftCfg.days) || formatDayPriority(getDefaultDayPriority(shiftCfg.days), shiftCfg.days);
-  settingDayPriorityHint.textContent = 'Si no se define, se usa por defecto: Lunes:1,Martes:2,Miércoles:3,Jueves:4,Viernes:5.';
+  settingDays.value = formatDaysWithPriority(shiftCfg.days, shiftCfg.dayPriority || getDefaultDayPriority(shiftCfg.days));
+  settingDaysHint.textContent = 'Si no defines prioridad, se asigna automáticamente según el orden indicado.';
   settingRecessStart.value = shiftCfg.recessBreak?.start || '';
   settingRecessEnd.value = shiftCfg.recessBreak?.end || '';
   settingLunchStart.value = shiftCfg.lunchBreak?.start || '';
@@ -1449,14 +1467,12 @@ function changeScheduledClass() {
 
 function saveShiftSettings() {
   const shift = settingsShiftSelect.value;
-  const days = settingDays.value.split(',').map(d => d.trim()).filter(Boolean);
+  const { days, dayPriority } = parseDaysAndPriorityInput(settingDays.value);
   const periodIds = selectedValues(settingShiftPeriods);
   const recessStart = settingRecessStart.value;
   const recessEnd = settingRecessEnd.value;
   const lunchStart = settingLunchStart.value;
   const lunchEnd = settingLunchEnd.value;
-  const parsedDayPriority = parseDayPriorityInput(settingDayPriority.value, days);
-  const dayPriority = Object.keys(parsedDayPriority).length ? parsedDayPriority : getDefaultDayPriority(days);
   if (!days.length) {
     settingsFeedback.className = 'error';
     settingsFeedback.textContent = 'Debe indicar al menos un día para el turno.';
