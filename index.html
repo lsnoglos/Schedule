@@ -446,7 +446,7 @@
 
       <div class="settings-card">
         <h3 style="margin:0;">🗓️ Configuración de periodos</h3>
-        <small>Registra periodos del año actual y luego asígnalos a cada turno.</small>
+        <small>Registra periodos del año actual, habilítalos/deshabilítalos y luego asígnalos a cada turno.</small>
         <small>También puedes revisar y eliminar periodos asignados al turno seleccionado en configuración por turno.</small>
         <div class="row3">
           <label>Nombre del periodo
@@ -476,7 +476,7 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Periodo</th><th>Tipo</th><th>Rango</th><th>Acción</th></tr></thead>
+            <thead><tr><th>Periodo</th><th>Tipo</th><th>Rango</th><th>Habilitado</th><th>Acción</th></tr></thead>
             <tbody id="shiftPeriodList"></tbody>
           </table>
         </div>
@@ -704,10 +704,10 @@ const DEMO_DATA = {
     { coordinationId: 'c4', career: 'Ingeniería Industrial' }
   ],
   periods: [
-    { id:'p1', name:'I Cuatrimestre 2026', type:'cuatrimestral', startMonth:'Enero', endMonth:'Marzo', shift:'diurno', year: 2026 },
-    { id:'p2', name:'II Cuatrimestre 2026', type:'cuatrimestral', startMonth:'Abril', endMonth:'Junio', shift:'diurno', year: 2026 },
-    { id:'p3', name:'III Cuatrimestre 2026', type:'cuatrimestral', startMonth:'Julio', endMonth:'Septiembre', shift:'diurno', year: 2026 },
-    { id:'p4', name:'IV Cuatrimestre 2026', type:'cuatrimestral', startMonth:'Octubre', endMonth:'Diciembre', shift:'diurno', year: 2026 }
+    { id:'p1', name:'I Cuatrimestre 2026', type:'cuatrimestral', startMonth:'Enero', endMonth:'Marzo', shift:'diurno', year: 2026, enabled: true },
+    { id:'p2', name:'II Cuatrimestre 2026', type:'cuatrimestral', startMonth:'Abril', endMonth:'Junio', shift:'diurno', year: 2026, enabled: true },
+    { id:'p3', name:'III Cuatrimestre 2026', type:'cuatrimestral', startMonth:'Julio', endMonth:'Septiembre', shift:'diurno', year: 2026, enabled: true },
+    { id:'p4', name:'IV Cuatrimestre 2026', type:'cuatrimestral', startMonth:'Octubre', endMonth:'Diciembre', shift:'diurno', year: 2026, enabled: true }
   ],
   currentPeriodId: 'p1',
   periodEnrollments: [],
@@ -745,14 +745,20 @@ const BackendAPI = {
         state.settings.shifts[key] = { ...DEFAULT_SHIFT_SETTINGS[key], ...(state.settings.shifts[key] || {}) };
         state.settings.shifts[key].periodIds ||= [...(DEFAULT_SHIFT_SETTINGS[key].periodIds || [])];
       }
-      state.periods ||= [{ id:'p1', name:'I Cuatrimestre', type:'cuatrimestral', startMonth:'Enero', endMonth:'Abril', shift:'diurno', year: CURRENT_YEAR }];
+      state.periods ||= [{ id:'p1', name:'I Cuatrimestre', type:'cuatrimestral', startMonth:'Enero', endMonth:'Abril', shift:'diurno', year: CURRENT_YEAR, enabled: true }];
       state.periods = state.periods.map(period => ({
         ...period,
         year: Number(period.year || CURRENT_YEAR),
         type: period.type || 'cuatrimestral',
         startMonth: period.startMonth || 'Enero',
-        endMonth: period.endMonth || 'Abril'
+        endMonth: period.endMonth || 'Abril',
+        enabled: period.enabled !== false
       }));
+      const enabledPeriodIds = new Set(state.periods.filter(period => period.enabled !== false).map(period => period.id));
+      state.settings.shifts = Object.fromEntries(Object.entries(state.settings.shifts || {}).map(([key, cfg]) => ([
+        key,
+        { ...cfg, periodIds: (cfg.periodIds || []).filter(periodId => enabledPeriodIds.has(periodId)) }
+      ])));
       const visiblePeriods = getVisiblePeriods(state);
       state.currentPeriodId = visiblePeriods.some(period => period.id === state.currentPeriodId)
         ? state.currentPeriodId
@@ -807,7 +813,7 @@ function formatAcademicYears(years = []) {
 }
 
 function getVisiblePeriods(state) {
-  return (state.periods || []);
+  return (state.periods || []).filter(period => period.enabled !== false);
 }
 
 function getEnabledPeriodsForShift(state, shift) {
@@ -817,9 +823,7 @@ function getEnabledPeriodsForShift(state, shift) {
 }
 
 function getPeriodsForCareerView(state, shift) {
-  const periodIdsFromData = new Set((state.schedule || []).filter(item => item.shift === shift).map(item => item.periodId).filter(Boolean));
-  if (!periodIdsFromData.size) return getVisiblePeriods(state);
-  return getVisiblePeriods(state).filter(period => periodIdsFromData.has(period.id));
+  return getEnabledPeriodsForShift(state, shift);
 }
 
 function parseDayPriorityInput(value, allowedDays = []) {
@@ -1237,10 +1241,13 @@ function render() {
   buildOptions(periodStartMonthSelect, MONTHS, month => ({ value: month, label: month }));
   buildOptions(periodEndMonthSelect, MONTHS, month => ({ value: month, label: month }));
   periodYearDisplay.value = String(CURRENT_YEAR);
-  const periodsForSettingShift = getEnabledPeriodsForShift(state, settingsShift);
-  shiftPeriodList.innerHTML = periodsForSettingShift.length
-    ? periodsForSettingShift.map(period => `<tr><td>${period.name}</td><td>${period.type}</td><td>${period.startMonth} - ${period.endMonth}</td><td><button class="secondary" data-remove-period-id="${period.id}" style="min-height:2rem;">Eliminar</button></td></tr>`).join('')
-    : '<tr><td colspan="4">No hay periodos asignados para este turno.</td></tr>';
+  const allPeriods = state.periods || [];
+  shiftPeriodList.innerHTML = allPeriods.length
+    ? allPeriods.map(period => {
+      const isEnabled = period.enabled !== false;
+      return `<tr><td>${period.name}</td><td>${period.type}</td><td>${period.startMonth} - ${period.endMonth}</td><td><input type="checkbox" data-toggle-period-id="${period.id}" ${isEnabled ? 'checked' : ''} /></td><td><button class="secondary" data-remove-period-id="${period.id}" style="min-height:2rem;">Eliminar</button></td></tr>`;
+    }).join('')
+    : '<tr><td colspan="5">No hay periodos configurados.</td></tr>';
 
   const enrolledCareers = [...new Set((state.periodEnrollments || []).map(e => e.career))];
   const configuredCareers = [...new Set((state.coordinationCareers || []).map(item => item.career))];
@@ -1531,6 +1538,28 @@ function saveShiftSettings() {
   render();
 }
 
+function togglePeriodEnabled(periodId, enabled) {
+  if (!periodId) return;
+  BackendAPI.update(state => {
+    const period = byId(state.periods, periodId);
+    if (!period) return;
+    period.enabled = enabled;
+    if (!enabled) {
+      state.settings.shifts = Object.fromEntries(Object.entries(state.settings.shifts || {}).map(([shiftKey, shiftCfg]) => ([
+        shiftKey,
+        { ...shiftCfg, periodIds: (shiftCfg.periodIds || []).filter(id => id !== periodId) }
+      ])));
+    }
+    const visible = getVisiblePeriods(state);
+    state.currentPeriodId = visible.some(item => item.id === state.currentPeriodId)
+      ? state.currentPeriodId
+      : (visible[0]?.id || '');
+  });
+  periodConfigFeedback.className = 'ok';
+  periodConfigFeedback.textContent = enabled ? 'Periodo habilitado en la configuración principal.' : 'Periodo deshabilitado en la configuración principal.';
+  render();
+}
+
 function removePeriod(periodId) {
   if (!periodId) return;
   const state = BackendAPI.getState();
@@ -1564,7 +1593,7 @@ function addPeriod() {
     return;
   }
   BackendAPI.update(state => {
-    state.periods.push({ id: uid(), name, type, startMonth, endMonth, year: CURRENT_YEAR });
+    state.periods.push({ id: uid(), name, type, startMonth, endMonth, year: CURRENT_YEAR, enabled: true });
   });
   periodNameInput.value = '';
   periodConfigFeedback.className = 'ok';
@@ -1661,6 +1690,11 @@ addPeriodBtn.addEventListener('click', addPeriod);
 shiftPeriodList.addEventListener('click', event => {
   const periodId = event.target?.dataset?.removePeriodId;
   if (periodId) removePeriod(periodId);
+});
+shiftPeriodList.addEventListener('change', event => {
+  const periodId = event.target?.dataset?.togglePeriodId;
+  if (!periodId) return;
+  togglePeriodEnabled(periodId, Boolean(event.target.checked));
 });
 resetShiftSettingsBtn.addEventListener('click', () => { BackendAPI.update(state => { state.settings.shifts[settingsShiftSelect.value] = structuredClone(DEFAULT_SHIFT_SETTINGS[settingsShiftSelect.value]); }); settingsFeedback.className = 'ok'; settingsFeedback.textContent = 'Turno restablecido a valores por defecto.'; render(); });
 simulateBtn.addEventListener('click', simulate);
