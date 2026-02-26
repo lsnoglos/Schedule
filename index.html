@@ -327,7 +327,7 @@
         </div>
         <input id="csvInput" type="file" accept=".csv" />
         <button id="importCsvBtn">Importar CSV</button>
-        <div id="csvFeedback" class="hint">Sin importación todavía.</div>
+        <div id="csvFeedback" class="hint">Ninguna clase importada....</div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -646,14 +646,14 @@ const DEFAULT_SHIFT_SETTINGS = {
   diurno: {
     label: 'Diurno',
     blockMinutes: 45,
-    creditsPerBlock: 1,
-    maxTurnsPerDay: 4,
+    creditsPerBlock: 2,
+    maxTurnsPerDay: 8,
     classStartTime: '08:00',
     days: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'],
-    dayPriority: {},
-    recessBreak: { start: '', end: '' },
-    lunchBreak: { start: '', end: '' },
-    periodIds: ['p1'],
+    dayPriority: { Lunes: 1, Martes: 2, Miércoles: 3, Jueves: 4, Viernes: 5 },
+    recessBreak: { start: '09:30', end: '10:00' },
+    lunchBreak: { start: '11:30', end: '13:00' },
+    periodIds: [],
     blocks: [{ id:'D1',label:'8:00-8:45'},{id:'D2',label:'8:50-9:30'},{id:'D3',label:'9:30-10:00'},{id:'D4',label:'10:00-10:45'},{id:'D5',label:'10:45-11:30'},{id:'D6',label:'11:30-12:00'},{id:'D7',label:'1:00-1:45'},{id:'D8',label:'1:45-2:30'}]
   },
   sabatino: {
@@ -685,26 +685,46 @@ const DEFAULT_SHIFT_SETTINGS = {
 };
 
 const DEMO_DATA = {
-  coordinations: [{id:'c1',name:'Arquitectura'},{id:'c2',name:'Contabilidad'}],
+  coordinations: [
+    { id:'c1', name:'ARQ' },
+    { id:'c2', name:'CCEE' },
+    { id:'c3', name:'AGRONOMIA' },
+    { id:'c4', name:'INGENIERÍA' }
+  ],
   coordinationCareers: [
-    { coordinationId: 'c1', career: 'Arquitectura' },
+    { coordinationId: 'c1', career: 'Ingeniería de Sistemas' },
     { coordinationId: 'c1', career: 'Diseño Gráfico' },
-    { coordinationId: 'c2', career: 'Contabilidad' }
+    { coordinationId: 'c1', career: 'Arquitectura' },
+    { coordinationId: 'c2', career: 'Contabilidad' },
+    { coordinationId: 'c2', career: 'Turismo' },
+    { coordinationId: 'c2', career: 'CPF' },
+    { coordinationId: 'c2', career: 'Derecho' },
+    { coordinationId: 'c3', career: 'Agronomía' },
+    { coordinationId: 'c4', career: 'Ingeniería Civil' },
+    { coordinationId: 'c4', career: 'Ingeniería Industrial' }
   ],
   periods: [
-    { id:'p1', name:'I Cuatrimestre', type:'cuatrimestral', startMonth:'Enero', endMonth:'Abril', shift:'diurno', year: new Date().getFullYear() },
-    { id:'p2', name:'I Trimestre', type:'trimestral', startMonth:'Enero', endMonth:'Marzo', shift:'dominical', year: new Date().getFullYear() }
+    { id:'p1', name:'I Cuatrimestre 2026', type:'cuatrimestral', startMonth:'Enero', endMonth:'Marzo', shift:'diurno', year: 2026 },
+    { id:'p2', name:'II Cuatrimestre 2026', type:'cuatrimestral', startMonth:'Abril', endMonth:'Junio', shift:'diurno', year: 2026 },
+    { id:'p3', name:'III Cuatrimestre 2026', type:'cuatrimestral', startMonth:'Julio', endMonth:'Septiembre', shift:'diurno', year: 2026 },
+    { id:'p4', name:'IV Cuatrimestre 2026', type:'cuatrimestral', startMonth:'Octubre', endMonth:'Diciembre', shift:'diurno', year: 2026 }
   ],
   currentPeriodId: 'p1',
-  periodEnrollments: [{ periodId:'p1', career:'Ing. Sistemas', students:92 }],
-  areas: [{id:'a1',name:'Ciencias Básicas'},{id:'a2',name:'Tecnología'}],
-  teachers: [{id:'t1',name:'MSc. María López',areaIds:['a1'],category:'identidad'},{id:'t2',name:'Ing. José Pérez',areaIds:['a2'],category:'taller'}],
+  periodEnrollments: [],
+  areas: [
+    { id:'a1', name:'Matemáticas' },
+    { id:'a2', name:'cálculo' },
+    { id:'a3', name:'Ciencias' },
+    { id:'a4', name:'Historias' },
+    { id:'a5', name:'Programación' },
+    { id:'a6', name:'Contabilidad' },
+    { id:'a7', name:'Derecho' },
+    { id:'a8', name:'Agronomía' }
+  ],
+  teachers: [],
   rooms: [{id:'r1',name:'Aula A-101',type:'aula',capacity:35},{id:'r2',name:'Lab Computación',type:'laboratorio',capacity:25},{id:'r3',name:'Taller Diseño',type:'taller',capacity:28}],
   settings: { shifts: structuredClone(DEFAULT_SHIFT_SETTINGS) },
-  classCatalog: [
-    {id:'cl1',coordinationId:'c1',career:'Arquitectura',name:'Taller de Diseño',shared:false,sharedCareers:[],weeklySessions:2,blocksRequired:2,shift:'diurno',category:'taller',requiredRoomType:'taller',preferredTeacherId:'t2',areaId:'a2'},
-    {id:'cl2',coordinationId:'c1',career:'Diseño Gráfico',name:'Identidad Nacional',shared:true,sharedCareers:['Arquitectura'],weeklySessions:1,blocksRequired:1,shift:'diurno',category:'identidad',requiredRoomType:'aula',preferredTeacherId:'t1',areaId:'a1'}
-  ],
+  classCatalog: [],
   schedule: []
 };
 
