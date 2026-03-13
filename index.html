@@ -529,6 +529,51 @@
       </div>
 
       <div class="settings-card">
+        <h3 style="margin:0;">🏫 Tipos de aula y aulas</h3>
+        <small>Registra tipos de recurso y aulas para asignación coherente según el tipo de la asignatura.</small>
+        <div class="row">
+          <label>Nuevo tipo de aula
+            <input id="newRoomTypeInput" placeholder="Ej. Auditorio" />
+          </label>
+          <label>&nbsp;
+            <button id="addRoomTypeBtn" class="secondary">Agregar tipo</button>
+          </label>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Tipos registrados</th></tr></thead>
+            <tbody id="roomTypeTable"></tbody>
+          </table>
+        </div>
+        <div class="row3">
+          <label>Nombre del aula
+            <input id="newRoomNameInput" placeholder="Ej. Aula B203" />
+          </label>
+          <label>Ubicación
+            <input id="newRoomLocationInput" placeholder="Ej. Edificio B" />
+          </label>
+          <label>Capacidad máx.
+            <input id="newRoomCapacityInput" type="number" min="1" step="1" placeholder="35" />
+          </label>
+        </div>
+        <div class="row">
+          <label>Tipo
+            <select id="newRoomTypeSelect"></select>
+          </label>
+          <label>&nbsp;
+            <button id="addRoomBtn">Agregar aula</button>
+          </label>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Aula</th><th>Ubicación</th><th>Capacidad</th><th>Tipo</th></tr></thead>
+            <tbody id="roomTable"></tbody>
+          </table>
+        </div>
+        <div id="roomConfigFeedback" class="hint">Sin cambios.</div>
+      </div>
+
+      <div class="settings-card">
         <h3 style="margin:0;">🎓 Matrícula por periodo y carrera</h3>
         <small>Configura estudiantes por carrera para el periodo activo. Esto se usa para crear grupos automáticos.</small>
         <label>Carrera
@@ -684,6 +729,17 @@ const DEFAULT_SHIFT_SETTINGS = {
   }
 };
 
+const DEFAULT_ROOM_TYPES = ['Lab.', 'Aula', 'Taller'];
+const DEFAULT_ROOMS = [
+  { name: 'Lab 1 de Computación', location: 'Edificio de Computación', capacity: 30, type: 'Lab.' },
+  { name: 'Lab 2 de Computación', location: 'Edificio de Computación', capacity: 30, type: 'Lab.' },
+  { name: 'Lab 3 de Computación', location: 'Edificio de Computación', capacity: 30, type: 'Lab.' },
+  { name: 'Lab 4 de Computación', location: 'Edificio de Computación', capacity: 30, type: 'Lab.' },
+  { name: 'Lab 5 de Computación', location: 'Edificio de Computación', capacity: 30, type: 'Lab.' },
+  { name: 'Aula B201', location: 'Edificio B', capacity: 40, type: 'Aula' },
+  { name: 'Aula B202', location: 'Edificio B', capacity: 40, type: 'Aula' }
+];
+
 const DEMO_DATA = {
   coordinations: [
     { id:'c1', name:'ARQ' },
@@ -722,7 +778,8 @@ const DEMO_DATA = {
     { id:'a8', name:'Agronomía' }
   ],
   teachers: [],
-  rooms: [{id:'r1',name:'Aula A-101',type:'aula',capacity:35},{id:'r2',name:'Lab Computación',type:'laboratorio',capacity:25},{id:'r3',name:'Taller Diseño',type:'taller',capacity:28}],
+  roomTypes: [...DEFAULT_ROOM_TYPES],
+  rooms: DEFAULT_ROOMS.map((room, index) => ({ id: `r${index + 1}`, ...room })),
   settings: { shifts: structuredClone(DEFAULT_SHIFT_SETTINGS) },
   classCatalog: [],
   schedule: []
@@ -765,7 +822,15 @@ const BackendAPI = {
         : (visiblePeriods[0]?.id || state.periods[0]?.id);
       state.periodEnrollments ||= [];
       state.coordinationCareers ||= [];
-      state.rooms = (state.rooms || []).map(room => ({ ...room, capacity: Number(room.capacity || 30) }));
+      const normalizedTypes = [...new Set([...(state.roomTypes || []), ...DEFAULT_ROOM_TYPES].map(normalizeRoomTypeName).filter(Boolean))];
+      state.roomTypes = normalizedTypes.length ? normalizedTypes : [...DEFAULT_ROOM_TYPES];
+      state.rooms = (state.rooms || []).map((room, index) => ({
+        ...room,
+        id: room.id || `r${index + 1}`,
+        location: room.location || '',
+        type: normalizeRoomTypeName(room.type || 'Aula'),
+        capacity: Number(room.capacity || 30)
+      }));
       state.teachers = (state.teachers || []).map(teacher => ({ ...teacher, category: teacher.category || 'general', areaIds: Array.isArray(teacher.areaIds) ? teacher.areaIds : (teacher.areaId ? [teacher.areaId] : []) }));
       state.classCatalog = (state.classCatalog || []).map(cls => {
         const years = normalizeAcademicYears(cls.years?.length ? cls.years : cls.anio);
@@ -789,6 +854,18 @@ const getShiftConfig = (state, shift) => state.settings.shifts[shift];
 const CAREER_PREFIX_IGNORES = ['ing', 'ingenieria', 'ingeniería', 'lic', 'licenciatura', 'de', 'en'];
 const CURRENT_YEAR = new Date().getFullYear();
 const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+
+function normalizeRoomTypeName(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return 'Aula';
+  const normalized = raw.toLowerCase().replace(/\./g, '').trim();
+  if (['lab', 'laboratorio', 'laboratory'].includes(normalized)) return 'Lab.';
+  if (['aula', 'classroom'].includes(normalized)) return 'Aula';
+  if (['taller', 'workshop'].includes(normalized)) return 'Taller';
+  return raw;
+}
+
 const DEFAULT_WEEKDAY_PRIORITY = {
   Lunes: 1,
   Martes: 2,
@@ -926,7 +1003,7 @@ function generateGroupsForCareer(state, career) {
   const enrollment = (state.periodEnrollments || []).find(e => e.periodId === period.id && e.career === career);
   const students = Number(enrollment?.students || 0);
   if (students <= 0) return [];
-  const aulaRooms = state.rooms.filter(r => r.type === 'aula' && Number(r.capacity || 0) > 0);
+  const aulaRooms = state.rooms.filter(r => normalizeRoomTypeName(r.type) === 'Aula' && Number(r.capacity || 0) > 0);
   const averageCapacity = aulaRooms.length ? aulaRooms.reduce((sum, room) => sum + Number(room.capacity || 0), 0) / aulaRooms.length : 30;
   const totalGroups = Math.max(1, Math.ceil(students / Math.max(1, averageCapacity)));
   const prefix = makeCareerPrefix(career);
@@ -1081,7 +1158,7 @@ function classToScheduleDraft(state, cls, day, startBlockId, context = {}) {
   const groupSize = Number(context.groupSize || context.students || 0);
   const blocks = blocksFromStart(state, cls.shift, startBlockId, cls.blocksRequired);
   const room = state.rooms.find(r => {
-    if (r.type !== cls.requiredRoomType) return false;
+    if (normalizeRoomTypeName(r.type) !== normalizeRoomTypeName(cls.requiredRoomType)) return false;
     if (groupSize > 0 && Number(r.capacity || 0) < groupSize) return false;
     return !state.schedule.some(e => e.shift === cls.shift && e.day === day && e.roomId === r.id && overlap(e.blockIds, blocks));
   });
@@ -1110,7 +1187,7 @@ function validateAssignment(state, draft) {
   const cls = byId(state.classCatalog, draft.classId);
   const room = byId(state.rooms, draft.roomId);
   if (!cls || !room || !draft.teacherId) return ['Falta clase, docente o aula válida.'];
-  if (room.type !== cls.requiredRoomType) return [`La clase requiere recurso tipo ${cls.requiredRoomType}.`];
+  if (normalizeRoomTypeName(room.type) !== normalizeRoomTypeName(cls.requiredRoomType)) return [`La clase requiere recurso tipo ${normalizeRoomTypeName(cls.requiredRoomType)}.`];
   if (draft.blockIds.length !== cls.blocksRequired) return [`${cls.name} requiere ${cls.blocksRequired} bloque(s) consecutivos.`];
   if (!getShiftConfig(state, draft.shift).days.includes(draft.day)) return [`El día ${draft.day} no está habilitado para el turno ${draft.shift}.`];
   const reservedBreak = draft.blockIds.find(blockId => getBreakTypeForBlock(state, draft.shift, blockId));
@@ -1256,6 +1333,15 @@ function render() {
   buildOptions(periodCareerSelect, careerOptions, c => ({ value: c, label: c }));
 
   buildOptions(settingsCoordinationSelect, state.coordinations, c => ({ value: c.id, label: c.name }));
+
+  const roomTypes = (state.roomTypes || []).map(normalizeRoomTypeName);
+  buildOptions(newRoomTypeSelect, roomTypes, type => ({ value: type, label: type }));
+  roomTypeTable.innerHTML = roomTypes.length
+    ? roomTypes.map(type => `<tr><td>${type}</td></tr>`).join('')
+    : '<tr><td>No hay tipos registrados.</td></tr>';
+  roomTable.innerHTML = (state.rooms || []).length
+    ? state.rooms.map(room => `<tr><td>${room.name}</td><td>${room.location || '-'}</td><td>${Number(room.capacity || 0)}</td><td>${normalizeRoomTypeName(room.type)}</td></tr>`).join('')
+    : '<tr><td colspan="4">No hay aulas registradas.</td></tr>';
   if (careerOptions.length) {
     periodCareerSelect.value = periodCareerSelect.value || careerOptions[0];
     const period = getActivePeriod(state);
@@ -1373,6 +1459,10 @@ async function importCSV() {
     for (const r of rows) {
       const credits = Number(r.creditos || 1);
       const years = normalizeAcademicYears(r.anio);
+      const requiredRoomType = normalizeRoomTypeName(r.tipo || 'Aula');
+      if (!state.roomTypes.some(type => normalizeRoomTypeName(type) === requiredRoomType)) {
+        state.roomTypes.push(requiredRoomType);
+      }
       state.classCatalog.push({
         id: uid(),
         coordinationId,
@@ -1386,7 +1476,7 @@ async function importCSV() {
         anio: years[0] || 1,
         years,
         category: r.categoria || 'general',
-        requiredRoomType: (r.tipo || 'aula').toLowerCase(),
+        requiredRoomType,
         preferredTeacherId: '',
         areaId: '',
         importedFromCsv: true
@@ -1432,6 +1522,46 @@ function addCoordinationCareer() {
   render();
 }
 
+
+
+function addRoomType() {
+  const name = normalizeRoomTypeName(newRoomTypeInput.value);
+  if (!name) return;
+  BackendAPI.update(state => {
+    state.roomTypes ||= [...DEFAULT_ROOM_TYPES];
+    const exists = state.roomTypes.some(type => normalizeRoomTypeName(type) === name);
+    if (!exists) state.roomTypes.push(name);
+  });
+  newRoomTypeInput.value = '';
+  roomConfigFeedback.className = 'ok';
+  roomConfigFeedback.textContent = 'Tipo de aula agregado.';
+  render();
+}
+
+function addRoom() {
+  const name = (newRoomNameInput.value || '').trim();
+  const location = (newRoomLocationInput.value || '').trim();
+  const capacity = Number(newRoomCapacityInput.value || 0);
+  const type = normalizeRoomTypeName(newRoomTypeSelect.value || 'Aula');
+  if (!name || capacity <= 0) {
+    roomConfigFeedback.className = 'error';
+    roomConfigFeedback.textContent = 'Complete nombre y capacidad válida para el aula.';
+    return;
+  }
+  BackendAPI.update(state => {
+    state.roomTypes ||= [...DEFAULT_ROOM_TYPES];
+    if (!state.roomTypes.some(item => normalizeRoomTypeName(item) === type)) state.roomTypes.push(type);
+    const exists = (state.rooms || []).some(room => room.name.toLowerCase() === name.toLowerCase());
+    if (exists) return;
+    state.rooms.push({ id: uid(), name, location, capacity, type });
+  });
+  newRoomNameInput.value = '';
+  newRoomLocationInput.value = '';
+  newRoomCapacityInput.value = '';
+  roomConfigFeedback.className = 'ok';
+  roomConfigFeedback.textContent = 'Aula agregada.';
+  render();
+}
 
 function savePeriodEnrollment() {
   const career = periodCareerSelect.value;
@@ -1686,6 +1816,8 @@ saveShiftSettingsBtn.addEventListener('click', saveShiftSettings);
 savePeriodEnrollmentBtn.addEventListener('click', savePeriodEnrollment);
 addCoordinationBtn.addEventListener('click', addCoordination);
 addCoordinationCareerBtn.addEventListener('click', addCoordinationCareer);
+addRoomTypeBtn.addEventListener('click', addRoomType);
+addRoomBtn.addEventListener('click', addRoom);
 addPeriodBtn.addEventListener('click', addPeriod);
 shiftPeriodList.addEventListener('click', event => {
   const periodId = event.target?.dataset?.removePeriodId;
